@@ -87,12 +87,21 @@
 <div class="results-section" id="reg-results" style="display:none">
     <div class="metrics-grid" id="reg-metrics"></div>
     <div class="result-card">
+        <h3>Model Comparison</h3>
+        <div class="table-container" id="reg-model-comparison"></div>
+    </div>
+    <div class="result-card">
         <h3>Coefficient Table</h3>
         <div class="table-container" id="reg-coeff-table"></div>
     </div>
     <div class="result-card">
         <h3>Diagnostic Tests</h3>
         <div class="table-container" id="reg-diag-table"></div>
+    </div>
+    <div class="result-card">
+        <h3>Recent-Year Validation</h3>
+        <div class="metrics-grid" id="reg-validation-metrics"></div>
+        <div class="table-container" id="reg-validation-table"></div>
     </div>
     <div class="charts-grid">
         <div class="chart-card">
@@ -114,6 +123,22 @@
     let regExcelFile = null;
     let regUploadedData = null;
     let regUseUpload = false;
+
+    function getPreferredDependent(data) {
+        const numeric = data.numeric_columns || [];
+        const candidate = numeric.find(col => col !== 'Year');
+        return candidate || numeric[0] || 'Electricity_Demand_GWh';
+    }
+
+    function syncIndependentVarSelections() {
+        const depVar = document.getElementById('dep-var').value;
+        const checkboxes = document.querySelectorAll('#indep-vars-checkboxes input[type="checkbox"]');
+        checkboxes.forEach(cb => {
+            const shouldDisable = cb.value === depVar || cb.value === 'Year';
+            cb.disabled = shouldDisable;
+            if (shouldDisable) cb.checked = false;
+        });
+    }
 
     function toggleDataSource(mode) {
         const uploadArea = document.getElementById('upload-area');
@@ -179,10 +204,13 @@
                 opt.value = col; opt.textContent = col;
                 depSelect.appendChild(opt);
             });
+            depSelect.value = getPreferredDependent(data);
+            depSelect.onchange = syncIndependentVarSelections;
 
             // Info
             document.getElementById('preview-info-reg').innerHTML =
-                `<span class="badge">Numeric columns: ${data.numeric_columns.join(', ')}</span>`;
+                `<span class="badge">Numeric columns: ${data.numeric_columns.join(', ')}</span>
+                <span class="badge">Independent variables exclude the dependent variable and Year by default</span>`;
 
             // Column selector for independent vars
             document.getElementById('column-selectors-reg').innerHTML = `
@@ -191,13 +219,18 @@
                 <div class="checkbox-grid" id="indep-vars-checkboxes">
                     ${data.numeric_columns.map(col =>
                 `<label class="checkbox-label">
-                            <input type="checkbox" value="${col}" ${col !== data.numeric_columns[0] ? 'checked' : ''}>
+                            <input type="checkbox" value="${col}">
                             ${col}
                         </label>`
             ).join('')}
                 </div>
             </div>
         `;
+            syncIndependentVarSelections();
+            document.querySelectorAll('#indep-vars-checkboxes input[type="checkbox"]').forEach(cb => {
+                if (!cb.disabled) cb.checked = true;
+            });
+            syncIndependentVarSelections();
         }
 
         // Preview table
@@ -213,6 +246,7 @@
         if (module === 'regression') {
             const depSelect = document.getElementById('dep-var');
             depSelect.innerHTML = '<option value="Electricity_Demand_GWh">Electricity Demand (GWh)</option>';
+            depSelect.onchange = null;
             document.getElementById('column-selectors-reg').innerHTML = '';
             document.getElementById('preview-info-reg').innerHTML = '';
         }
@@ -247,6 +281,14 @@
             // Get selected independent vars
             const checkboxes = document.querySelectorAll('#indep-vars-checkboxes input:checked');
             body.independent_vars = Array.from(checkboxes).map(cb => cb.value);
+            body.independent_vars = body.independent_vars.filter(v => v !== body.dependent_var && v !== 'Year');
+            if (body.independent_vars.length === 0) {
+                status.className = 'status-bar error';
+                document.getElementById('reg-status-text').textContent = '❌ Select at least one independent variable.';
+                btn.disabled = false;
+                btn.textContent = '▶ Run Regression';
+                return;
+            }
 
             // Rebuild growth assumptions from selected vars
             const growthAssumptions = {};
@@ -296,9 +338,28 @@
         document.getElementById('reg-coeff-table').innerHTML = buildTable(
             data.coefficients, ['Variable', 'Coefficient', 'Std. Error', 't-Statistic', 'Prob.']
         );
+        document.getElementById('reg-model-comparison').innerHTML = buildTable(
+            data.model_comparison || [], ['Model', 'Status', 'R-squared', 'Adj. R-squared', 'AIC', 'BIC']
+        );
         document.getElementById('reg-diag-table').innerHTML = buildTable(
             data.diagnostics, ['Test', 'Statistic', 'P-Value', 'Conclusion']
         );
+        if (data.validation && data.validation.summary) {
+            const v = data.validation.summary;
+            document.getElementById('reg-validation-metrics').innerHTML = `
+            <div class="metric-card"><div class="metric-value">${v['Holdout Observations']}</div><div class="metric-label">Holdout Obs.</div></div>
+            <div class="metric-card"><div class="metric-value">${formatNumber(v['RMSE'])}</div><div class="metric-label">RMSE</div></div>
+            <div class="metric-card"><div class="metric-value">${formatNumber(v['MAPE (%)'])}</div><div class="metric-label">MAPE (%)</div></div>
+            <div class="metric-card"><div class="metric-value">${formatNumber(v['Bias (%)'])}</div><div class="metric-label">Bias (%)</div></div>
+        `;
+            document.getElementById('reg-validation-table').innerHTML = buildTable(
+                data.validation.detail, ['Year', 'Actual', 'Predicted', 'Error', 'Abs Error (%)']
+            );
+        } else {
+            document.getElementById('reg-validation-metrics').innerHTML = '';
+            document.getElementById('reg-validation-table').innerHTML =
+                '<p style="color:var(--text-muted);font-style:italic;">Not enough history for recent-year validation.</p>';
+        }
 
         if (data.charts.forecast) Plotly.newPlot('forecast-chart', data.charts.forecast.data, data.charts.forecast.layout, { responsive: true });
         if (data.charts.residuals) Plotly.newPlot('residuals-chart', data.charts.residuals.data, data.charts.residuals.layout, { responsive: true });

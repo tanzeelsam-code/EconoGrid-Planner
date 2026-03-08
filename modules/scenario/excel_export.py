@@ -97,6 +97,22 @@ class ScenarioExcelExport:
                 )
                 formatter.auto_fit_columns(ws)
 
+        # Supply/transformation details per scenario
+        if supply_data:
+            for name, supply_df in supply_data.items():
+                sheet_name = f"Supply {name}"[:31]
+                ws = formatter.add_sheet(sheet_name)
+                row = formatter.write_title_block(
+                    ws, f"Supply & Transformation — {name}",
+                    subtitle="Electricity generation requirements",
+                    span=len(supply_df.columns) + 1
+                )
+                formatter.write_dataframe(
+                    ws, supply_df, start_row=row,
+                    number_format=EXCEL_STYLES["number_format_dec2"]
+                )
+                formatter.auto_fit_columns(ws)
+
         filepath = os.path.join(self.output_dir, filename)
         return formatter.save(filepath)
 

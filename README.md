@@ -1,4 +1,4 @@
-# Econometric & Energy Modeling Toolkit (EEMT)
+# EconoGrid Planner
 
 An integrated production-ready software platform combining:
 
@@ -14,11 +14,13 @@ All modules produce **professionally formatted Excel workbooks** and are accessi
 
 ```bash
 # 1. Install dependencies
-cd "Energy calculations"
+cd "/path/to/EconoGrid-Planner"
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
 # 2. Run the dashboard
-python run.py
+python3 run.py
 
 # 3. Open in browser
 # http://localhost:5000
@@ -27,7 +29,7 @@ python run.py
 ## Run Tests
 
 ```bash
-python -m pytest tests/ -v
+python3 -m pytest tests/ -v
 ```
 
 ---
@@ -35,7 +37,7 @@ python -m pytest tests/ -v
 ## Project Structure
 
 ```
-Energy calculations/
+EconoGrid-Planner/
 ├── run.py                    # Entry point — starts Flask server
 ├── config.py                 # Global configuration & defaults
 ├── requirements.txt          # Python dependencies
@@ -132,12 +134,11 @@ Energy calculations/
 
 ## Dashboard
 
-Dark-themed, professional UI with:
-- **Tab-based navigation** — Home / EViews / LEAP / RETScreen
-- **Parameter input forms** for each module
-- **Interactive Plotly charts** (forecast, scenarios, cash flow, tornado)
-- **Results cards** with key metrics
-- **Excel download buttons** for each module
+The dashboard is organized as a planning workflow:
+- **Calibrate demand** with regression diagnostics, model comparison, and recent-year validation
+- **Build scenarios** from simplified sector demand inputs or uploaded sector-fuel balance tables
+- **Stress-test finance** with project vs. equity metrics, DSCR, LLCR, and sensitivity outputs
+- **Export workbooks** for each module
 
 ---
 

@@ -23,14 +23,14 @@
                 style="display:none">
             <p>📂 <strong>Drag & drop</strong> your file here or <a href="#"
                     onclick="document.getElementById('file-input-scn').click(); return false;">browse</a></p>
-            <p class="help-text">CSV/Excel with columns: Sector, Fuel, Base_Year_Demand_PJ, Activity_Growth_Rate,
-                Intensity_Change_Rate</p>
+            <p class="help-text">CSV/Excel with columns: Sector, Fuel, Base_Year_Demand_PJ, Activity_Growth_Rate, Intensity_Change_Rate. Optional: Low_Carbon_Growth_Rate, High_Growth_Rate, Target_Fuel, Fuel_Switch_Rate.</p>
         </div>
         <div class="upload-preview" id="upload-preview-scn" style="display:none">
             <div class="preview-header">
                 <span class="preview-filename" id="preview-filename-scn"></span>
                 <button class="btn btn-sm" onclick="clearScnUpload()">✕ Clear</button>
             </div>
+            <p class="help-text">Uploaded sector-fuel matrix will override the simplified manual demand table below.</p>
             <div class="table-container preview-table" id="preview-table-scn"></div>
         </div>
     </div>
@@ -173,12 +173,24 @@
         <h3>Scenario Summary</h3>
         <div class="table-container" id="scn-summary-table"></div>
     </div>
+    <div class="result-card">
+        <h3>Supply Outlook</h3>
+        <div class="table-container" id="scn-supply-table"></div>
+    </div>
     <div class="charts-grid">
         <div class="chart-card">
             <div id="demand-comparison-chart" class="chart-container"></div>
         </div>
         <div class="chart-card">
             <div id="emissions-comparison-chart" class="chart-container"></div>
+        </div>
+    </div>
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div id="generation-mix-chart" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+            <div id="generation-req-chart" class="chart-container"></div>
         </div>
     </div>
     <div class="chart-card full-width">
@@ -373,8 +385,16 @@
         document.getElementById('scn-summary-table').innerHTML = buildTable(
             data.scenario_summary, ['Scenario', 'Description', 'Base Year Demand (GWh)', 'Final Year Demand (GWh)', 'Avg. Annual Growth (%)']
         );
+        if (data.supply_summary) {
+            document.getElementById('scn-supply-table').innerHTML = buildTable(
+                data.supply_summary,
+                ['Scenario', 'Final Gross Generation (GWh)', 'Final Primary Energy Input (PJ)', 'Final T&D Losses (GWh)', 'Renewable Share (%)', 'Thermal Share (%)']
+            );
+        }
         if (data.charts.demand_comparison) Plotly.newPlot('demand-comparison-chart', data.charts.demand_comparison.data, data.charts.demand_comparison.layout, { responsive: true });
         if (data.charts.emissions_comparison) Plotly.newPlot('emissions-comparison-chart', data.charts.emissions_comparison.data, data.charts.emissions_comparison.layout, { responsive: true });
+        if (data.charts.generation_mix) Plotly.newPlot('generation-mix-chart', data.charts.generation_mix.data, data.charts.generation_mix.layout, { responsive: true });
+        if (data.charts.generation_requirements) Plotly.newPlot('generation-req-chart', data.charts.generation_requirements.data, data.charts.generation_requirements.layout, { responsive: true });
         if (data.charts.sector_breakdown) Plotly.newPlot('sector-breakdown-chart', data.charts.sector_breakdown.data, data.charts.sector_breakdown.layout, { responsive: true });
     }
 

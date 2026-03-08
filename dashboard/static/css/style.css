@@ -207,6 +207,59 @@ body {
     border: 1px solid rgba(79, 195, 247, 0.25);
 }
 
+/* ── Workflow Section ─────────────────────────────────────────── */
+.workflow-section {
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    margin-bottom: 1rem;
+}
+
+.section-header h2 {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.section-header p {
+    color: var(--text-secondary);
+}
+
+.workflow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+}
+
+.workflow-step {
+    background: linear-gradient(180deg, rgba(79, 195, 247, 0.08), rgba(22, 27, 34, 0.95));
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+}
+
+.workflow-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    margin-bottom: 0.75rem;
+    background: rgba(79, 195, 247, 0.15);
+    color: var(--accent-blue);
+    font-weight: 700;
+}
+
+.workflow-step h3 {
+    margin-bottom: 0.5rem;
+}
+
+.workflow-step p {
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+}
+
 /* ── Module Cards ────────────────────────────────────────────── */
 .modules-grid {
     display: grid;

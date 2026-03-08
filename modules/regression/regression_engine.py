@@ -265,6 +265,62 @@ class RegressionEngine:
 
         return elasticities
 
+    def predict(
+        self,
+        result: RegressionResult,
+        data: pd.DataFrame,
+        confidence_level: float = 0.95
+    ) -> pd.DataFrame:
+        """
+        Predict on new data supplied in the original variable space.
+
+        Args:
+            result: Previously estimated regression result.
+            data: DataFrame containing the original independent variables.
+            confidence_level: Interval coverage for predictions.
+
+        Returns:
+            DataFrame with predicted values and confidence bounds.
+        """
+        original_var_names = [
+            var.replace("LOG(", "").replace(")", "")
+            for var in result.independent_vars
+        ]
+        missing = set(original_var_names) - set(data.columns)
+        if missing:
+            raise ValueError(f"Prediction data is missing variables: {sorted(missing)}")
+
+        X = data[original_var_names].copy()
+        if result.model_type == "log_log":
+            if (X <= 0).any().any():
+                raise ValueError("Prediction data contains non-positive values for log-log model.")
+            X = np.log(X)
+        if result.model_type == "semi_log":
+            X = X.copy()
+
+        if result.coefficients["Variable"].iloc[0] == "C (Intercept)":
+            X = sm.add_constant(X, has_constant="add")
+
+        prediction = result.raw_result.get_prediction(X)
+        pred_summary = prediction.summary_frame(alpha=1 - confidence_level)
+
+        mean = pred_summary["mean"]
+        lower = pred_summary["mean_ci_lower"]
+        upper = pred_summary["mean_ci_upper"]
+
+        if result.model_type in ["log_log", "semi_log"]:
+            mean = np.exp(mean)
+            lower = np.exp(lower)
+            upper = np.exp(upper)
+
+        dep_var_clean = result.dependent_var.replace("LOG(", "").replace(")", "")
+        return pd.DataFrame({
+            "Predicted": mean.round(4),
+            f"{dep_var_clean} (Predicted)": mean.round(4),
+            f"Lower {confidence_level*100:.0f}%": lower.round(4),
+            f"Upper {confidence_level*100:.0f}%": upper.round(4),
+        }, index=data.index)
+
     def summary_text(self, result: Optional[RegressionResult] = None) -> str:
         """
         Generate an EViews-style text summary.

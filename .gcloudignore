@@ -1,0 +1,32 @@
+# Ignore git internals
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Gemini agent files (contains socket files that break uploads)
+.gemini/
+
+# Output files
+outputs/*.xlsx
+outputs/*.csv
+uploads/*
+
+# Docs
+README.md
+USER_MANUAL.md
+
+# Tests
+tests/

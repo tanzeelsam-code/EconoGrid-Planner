@@ -21,13 +21,17 @@ class FinancialResult:
 
     # Key metrics
     lcoe: float                      # USD/MWh
-    npv: float                       # USD
-    firr: Optional[float]            # Financial IRR (with taxes/debt)
+    npv: float                       # Project NPV (USD)
+    equity_npv: float                # Equity NPV (USD)
+    firr: Optional[float]            # Project IRR (after tax, pre-financing)
     eirr: Optional[float]            # Economic IRR (no taxes/debt)
-    payback_period: Optional[float]  # Years or None
+    payback_period: Optional[float]  # Project payback period
     discounted_payback: Optional[float]
     benefit_cost_ratio: float
     equity_irr: Optional[float]
+    min_dscr: Optional[float]
+    avg_dscr: Optional[float]
+    llcr: Optional[float]
 
     # Project parameters
     capex: float
@@ -109,11 +113,11 @@ class FinanceEngine:
         # ── LCOE ───────────────────────────────────────────────────────────
         lcoe = self._calculate_lcoe()
 
-        # ── NPV ────────────────────────────────────────────────────────────
+        # ── Project NPV / IRR ─────────────────────────────────────────────
         project_cashflows = cashflow_df["Net Cash Flow"].values
         npv = float(npf.npv(self.discount_rate, project_cashflows))
 
-        # ── FIRR (Financial IRR — includes taxes & debt service) ─────────
+        # ── FIRR (Project IRR — after tax, before financing) ─────────────
         try:
             firr = float(npf.irr(project_cashflows))
             if np.isnan(firr) or firr > 1.0 or firr < -1.0:
@@ -144,7 +148,7 @@ class FinanceEngine:
             ].values
         )
         pv_costs = self.capex + sum(
-            cashflow_df.loc[cashflow_df["Year"] > 0, "Total Costs"].values /
+            cashflow_df.loc[cashflow_df["Year"] > 0, "Project Cost Basis"].values /
             (1 + self.discount_rate) ** cashflow_df.loc[
                 cashflow_df["Year"] > 0, "Year"
             ].values
@@ -153,12 +157,18 @@ class FinanceEngine:
 
         # ── Equity IRR ─────────────────────────────────────────────────────
         equity_flows = cashflow_df["Equity Cash Flow"].values
+        equity_npv = float(npf.npv(self.discount_rate, equity_flows))
         try:
             equity_irr = float(npf.irr(equity_flows))
             if np.isnan(equity_irr) or equity_irr > 2.0 or equity_irr < -1.0:
                 equity_irr = None
         except (ValueError, RuntimeError):
             equity_irr = None
+
+        dscr_series = cashflow_df.loc[cashflow_df["Debt Service"] > 0, "DSCR"].dropna()
+        min_dscr = float(dscr_series.min()) if not dscr_series.empty else None
+        avg_dscr = float(dscr_series.mean()) if not dscr_series.empty else None
+        llcr = self._calculate_llcr(cashflow_df)
 
         # ── Revenue table ──────────────────────────────────────────────────
         revenue_df = cashflow_df[
@@ -176,13 +186,17 @@ class FinanceEngine:
             "Project Life (years)": self.project_life,
             "Discount Rate": f"{self.discount_rate:.1%}",
             "LCOE (USD/MWh)": f"${lcoe:.2f}",
-            "NPV (USD)": f"${npv:,.0f}",
-            "FIRR (Financial)": f"{firr:.2%}" if firr is not None else "N/A",
+            "Project NPV (USD)": f"${npv:,.0f}",
+            "Equity NPV (USD)": f"${equity_npv:,.0f}",
+            "FIRR (Project)": f"{firr:.2%}" if firr is not None else "N/A",
             "EIRR (Economic)": f"{eirr:.2%}" if eirr is not None else "N/A",
-            "Simple Payback (years)": f"{payback:.1f}" if payback else "N/A",
-            "Discounted Payback (years)": f"{disc_payback:.1f}" if disc_payback else "N/A",
+            "Simple Payback (years)": f"{payback:.1f}" if payback is not None else "N/A",
+            "Discounted Payback (years)": f"{disc_payback:.1f}" if disc_payback is not None else "N/A",
             "Benefit-Cost Ratio": f"{bcr:.3f}",
             "Equity IRR": f"{equity_irr:.2%}" if equity_irr is not None else "N/A",
+            "Minimum DSCR": f"{min_dscr:.2f}" if min_dscr is not None else "N/A",
+            "Average DSCR": f"{avg_dscr:.2f}" if avg_dscr is not None else "N/A",
+            "LLCR": f"{llcr:.2f}" if llcr is not None else "N/A",
         }
 
         self._result = FinancialResult(
@@ -190,12 +204,16 @@ class FinanceEngine:
             technology=self.technology,
             lcoe=round(lcoe, 2),
             npv=round(npv, 2),
+            equity_npv=round(equity_npv, 2),
             firr=round(firr, 4) if firr is not None else None,
             eirr=round(eirr, 4) if eirr is not None else None,
-            payback_period=round(payback, 1) if payback else None,
-            discounted_payback=round(disc_payback, 1) if disc_payback else None,
+            payback_period=round(payback, 1) if payback is not None else None,
+            discounted_payback=round(disc_payback, 1) if disc_payback is not None else None,
             benefit_cost_ratio=round(bcr, 3),
             equity_irr=round(equity_irr, 4) if equity_irr is not None else None,
+            min_dscr=round(min_dscr, 3) if min_dscr is not None else None,
+            avg_dscr=round(avg_dscr, 3) if avg_dscr is not None else None,
+            llcr=round(llcr, 3) if llcr is not None else None,
             capex=self.capex,
             annual_opex=self.annual_opex,
             annual_generation=self.annual_generation,
@@ -216,7 +234,7 @@ class FinanceEngine:
         # Year 0: CAPEX
         equity = self.capex * (1 - self.debt_fraction)
         debt_amount = self.capex * self.debt_fraction
-        annual_debt_payment = self._calculate_annual_debt_payment(debt_amount)
+        debt_schedule = self._build_debt_schedule(debt_amount)
 
         rows.append({
             "Year": 0,
@@ -225,12 +243,19 @@ class FinanceEngine:
             "Revenue": 0,
             "OPEX": 0,
             "Total Costs": 0,
+            "Project Cost Basis": 0,
             "Debt Service": 0,
+            "Interest": 0,
+            "Principal Repayment": 0,
+            "CFADS": 0,
             "Depreciation": 0,
-            "Tax": 0,
+            "Project Tax": 0,
+            "Equity Tax": 0,
             "Net Cash Flow": -self.capex,
             "Economic Cash Flow": -self.capex,
             "Equity Cash Flow": -equity,
+            "Outstanding Debt": debt_amount,
+            "DSCR": np.nan,
             "Cumulative Cash Flow": -self.capex,
             "Discounted CF": -self.capex,
             "Cumulative Discounted CF": -self.capex,
@@ -250,27 +275,32 @@ class FinanceEngine:
             # OPEX with inflation
             opex = self.annual_opex * (1 + self.inflation_rate) ** (year - 1)
 
-            # Debt service
-            debt_service = annual_debt_payment if year <= self.debt_term else 0
+            debt_row = debt_schedule.get(year, {})
+            debt_service = debt_row.get("debt_service", 0.0)
+            interest = debt_row.get("interest", 0.0)
+            principal_payment = debt_row.get("principal", 0.0)
+            closing_balance = debt_row.get("closing_balance", 0.0)
 
             # Depreciation (straight-line)
             depreciation = self.capex / self.depreciation_years if year <= self.depreciation_years else 0
 
-            # Tax
-            taxable_income = revenue - opex - depreciation
-            tax = max(0, taxable_income * self.tax_rate)
+            # Taxes
+            taxable_income_project = revenue - opex - depreciation
+            project_tax = max(0, taxable_income_project * self.tax_rate)
+            taxable_income_equity = revenue - opex - depreciation - interest
+            equity_tax = max(0, taxable_income_equity * self.tax_rate)
 
-            # Net cash flow (financial: includes debt + tax)
-            net_cf = revenue - opex - debt_service - tax
+            # Cash flows
+            cfads = revenue - opex - project_tax
+            net_cf = cfads
+            equity_cf = revenue - opex - equity_tax - debt_service
 
             # Economic cash flow (no taxes, no debt — pure project economics)
             economic_cf = revenue - opex
 
-            # Equity cash flow
-            equity_cf = net_cf  # Already accounts for debt service
-
             # Discounted
             disc_cf = net_cf / (1 + self.discount_rate) ** year
+            dscr = (cfads / debt_service) if debt_service > 0 else np.nan
 
             cumulative += net_cf
             cumulative_disc += disc_cf
@@ -281,13 +311,20 @@ class FinanceEngine:
                 "Electricity Price": round(price, 2),
                 "Revenue": round(revenue, 2),
                 "OPEX": round(opex, 2),
-                "Total Costs": round(opex + debt_service + tax, 2),
+                "Total Costs": round(opex + project_tax + debt_service, 2),
+                "Project Cost Basis": round(opex + project_tax, 2),
                 "Debt Service": round(debt_service, 2),
+                "Interest": round(interest, 2),
+                "Principal Repayment": round(principal_payment, 2),
+                "CFADS": round(cfads, 2),
                 "Depreciation": round(depreciation, 2),
-                "Tax": round(tax, 2),
+                "Project Tax": round(project_tax, 2),
+                "Equity Tax": round(equity_tax, 2),
                 "Net Cash Flow": round(net_cf, 2),
                 "Economic Cash Flow": round(economic_cf, 2),
                 "Equity Cash Flow": round(equity_cf, 2),
+                "Outstanding Debt": round(closing_balance, 2),
+                "DSCR": round(dscr, 3) if not np.isnan(dscr) else np.nan,
                 "Cumulative Cash Flow": round(cumulative, 2),
                 "Discounted CF": round(disc_cf, 2),
                 "Cumulative Discounted CF": round(cumulative_disc, 2),
@@ -346,3 +383,52 @@ class FinanceEngine:
         if r == 0:
             return principal / n
         return principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+
+    def _build_debt_schedule(self, principal: float) -> Dict[int, Dict[str, float]]:
+        """Create a basic annuity debt schedule with interest and principal split."""
+        if principal <= 0 or self.debt_fraction == 0:
+            return {}
+
+        annual_payment = self._calculate_annual_debt_payment(principal)
+        balance = principal
+        schedule: Dict[int, Dict[str, float]] = {}
+
+        for year in range(1, self.project_life + 1):
+            if year > self.debt_term or balance <= 0:
+                schedule[year] = {
+                    "interest": 0.0,
+                    "principal": 0.0,
+                    "debt_service": 0.0,
+                    "closing_balance": 0.0,
+                }
+                continue
+
+            interest = balance * self.debt_rate
+            principal_payment = min(annual_payment - interest, balance)
+            debt_service = interest + principal_payment
+            balance = max(0.0, balance - principal_payment)
+            schedule[year] = {
+                "interest": interest,
+                "principal": principal_payment,
+                "debt_service": debt_service,
+                "closing_balance": balance,
+            }
+
+        return schedule
+
+    def _calculate_llcr(self, cashflow_df: pd.DataFrame) -> Optional[float]:
+        """Loan life coverage ratio based on project CFADS during the debt tenor."""
+        if self.debt_fraction == 0:
+            return None
+
+        debt_amount = self.capex * self.debt_fraction
+        debt_years = cashflow_df.loc[
+            (cashflow_df["Year"] > 0) & (cashflow_df["Year"] <= self.debt_term)
+        ]
+        if debt_years.empty or debt_amount <= 0:
+            return None
+
+        pv_cfads = sum(
+            debt_years["CFADS"].values / (1 + self.debt_rate) ** debt_years["Year"].values
+        )
+        return float(pv_cfads / debt_amount) if debt_amount > 0 else None

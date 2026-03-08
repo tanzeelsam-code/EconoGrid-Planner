@@ -20,8 +20,8 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ── Flask Settings ─────────────────────────────────────────────────────────────
 FLASK_HOST = "0.0.0.0"
-FLASK_PORT = 5001
-FLASK_DEBUG = True
+FLASK_PORT = int(os.environ.get("PORT", 5000))
+FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
 SECRET_KEY = os.environ.get("SECRET_KEY", "econometric-toolkit-dev-key-2024")
 
 # ── Module 1: Regression Defaults ─────────────────────────────────────────────

@@ -314,6 +314,7 @@ class TestFinanceEngine:
 
         assert result.lcoe > 0
         assert result.npv is not None
+        assert result.equity_npv is not None
         assert result.cashflow_table is not None
         assert len(result.cashflow_table) == 26  # Year 0 + 25 years
         print(f"✅ LCOE={result.lcoe:.2f}, NPV={result.npv:,.0f}, FIRR={result.firr}, EIRR={result.eirr}")
@@ -335,6 +336,17 @@ class TestFinanceEngine:
 
         assert result.benefit_cost_ratio > 0
         print(f"✅ B/C Ratio: {result.benefit_cost_ratio:.3f}")
+
+    def test_credit_metrics(self):
+        from modules.financial.finance_engine import FinanceEngine
+        engine = FinanceEngine(self.project_data)
+        result = engine.run_analysis()
+
+        assert result.min_dscr is not None
+        assert result.avg_dscr is not None
+        assert result.llcr is not None
+        assert result.min_dscr > 0
+        print(f"✅ Credit metrics: min DSCR={result.min_dscr:.2f}, LLCR={result.llcr:.2f}")
 
 
 class TestLCOECalculator:
@@ -461,6 +473,8 @@ class TestIntegration:
         assert response.status_code == 200
         data = response.get_json()
         assert data["status"] == "success"
+        assert "model_comparison" in data
+        assert "validation" in data
         print("✅ Regression API returns success")
 
     def test_scenario_api(self):
@@ -474,7 +488,48 @@ class TestIntegration:
         assert response.status_code == 200
         data = response.get_json()
         assert data["status"] == "success"
+        assert "supply_summary" in data
         print("✅ Scenario API returns success")
+
+    def test_scenario_api_with_uploaded_matrix(self):
+        """Test scenario API accepts uploaded sector-fuel matrix data."""
+        from dashboard.app import create_app
+        app = create_app()
+        client = app.test_client()
+        uploaded_data = [
+            {
+                "Sector": "Residential",
+                "Fuel": "Electricity",
+                "Base_Year_Demand_PJ": 12.0,
+                "Activity_Growth_Rate": 0.04,
+                "Intensity_Change_Rate": -0.01,
+                "Low_Carbon_Growth_Rate": 0.025,
+                "High_Growth_Rate": 0.055,
+                "Target_Fuel": "Electricity",
+                "Fuel_Switch_Rate": 0.0,
+            },
+            {
+                "Sector": "Residential",
+                "Fuel": "Natural Gas",
+                "Base_Year_Demand_PJ": 8.0,
+                "Activity_Growth_Rate": 0.04,
+                "Intensity_Change_Rate": -0.01,
+                "Low_Carbon_Growth_Rate": 0.025,
+                "High_Growth_Rate": 0.055,
+                "Target_Fuel": "Electricity",
+                "Fuel_Switch_Rate": 0.01,
+            },
+        ]
+        response = client.post(
+            "/api/scenario/run",
+            json={"uploaded_data": uploaded_data},
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["base_year"]["demand_by_fuel"]["Natural Gas"] > 0
+        print("✅ Scenario API accepts uploaded sector-fuel matrix")
 
     def test_financial_api(self):
         """Test financial API endpoint."""
@@ -487,6 +542,8 @@ class TestIntegration:
         assert response.status_code == 200
         data = response.get_json()
         assert data["status"] == "success"
+        assert "Project NPV (USD)" in data["summary"]
+        assert "Minimum DSCR" in data["summary"]
         print("✅ Financial API returns success")
 
 

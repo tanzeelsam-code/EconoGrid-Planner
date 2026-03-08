@@ -30,6 +30,7 @@
                 <span class="preview-filename" id="preview-filename-fin"></span>
                 <button class="btn btn-sm" onclick="clearFinUpload()">✕ Clear</button>
             </div>
+            <p class="help-text">Uploaded project data will be used as the analysis input. Manual fields are shown only for quick review and override when you switch back.</p>
             <div class="table-container preview-table" id="preview-table-fin"></div>
         </div>
     </div>
@@ -197,6 +198,7 @@
         document.getElementById('btn-sample-fin').classList.toggle('active', mode === 'sample');
         document.getElementById('btn-upload-fin').classList.toggle('active', mode === 'upload');
         area.style.display = mode === 'upload' ? 'block' : 'none';
+        manual.style.display = mode === 'upload' ? 'none' : 'block';
         finUseUpload = mode === 'upload';
     }
 
@@ -321,11 +323,13 @@
         const s = data.summary;
         document.getElementById('fin-metrics').innerHTML = `
         <div class="metric-card accent"><div class="metric-value">${s['LCOE (USD/MWh)']}</div><div class="metric-label">LCOE</div></div>
-        <div class="metric-card"><div class="metric-value">${s['NPV (USD)']}</div><div class="metric-label">NPV</div></div>
-        <div class="metric-card"><div class="metric-value">${s['FIRR (Financial)']}</div><div class="metric-label">FIRR (Financial)</div></div>
+        <div class="metric-card"><div class="metric-value">${s['Project NPV (USD)']}</div><div class="metric-label">Project NPV</div></div>
+        <div class="metric-card"><div class="metric-value">${s['Equity NPV (USD)']}</div><div class="metric-label">Equity NPV</div></div>
+        <div class="metric-card"><div class="metric-value">${s['FIRR (Project)']}</div><div class="metric-label">Project IRR</div></div>
         <div class="metric-card"><div class="metric-value">${s['EIRR (Economic)']}</div><div class="metric-label">EIRR (Economic)</div></div>
-        <div class="metric-card"><div class="metric-value">${s['Simple Payback (years)']}</div><div class="metric-label">Payback</div></div>
-        <div class="metric-card"><div class="metric-value">${s['Benefit-Cost Ratio']}</div><div class="metric-label">B/C Ratio</div></div>
+        <div class="metric-card"><div class="metric-value">${s['Equity IRR']}</div><div class="metric-label">Equity IRR</div></div>
+        <div class="metric-card"><div class="metric-value">${s['Minimum DSCR']}</div><div class="metric-label">Min DSCR</div></div>
+        <div class="metric-card"><div class="metric-value">${s['LLCR']}</div><div class="metric-label">LLCR</div></div>
     `;
         const summaryRows = Object.entries(s).map(([k, v]) => ({ Parameter: k, Value: v }));
         document.getElementById('fin-summary-table').innerHTML = buildTable(summaryRows, ['Parameter', 'Value']);

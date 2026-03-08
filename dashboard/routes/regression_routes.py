@@ -54,6 +54,17 @@ def run_regression():
         # Run diagnostics
         diagnostics = RegressionDiagnostics.run_all(result)
         diag_table = RegressionDiagnostics.summary_table(diagnostics)
+        validation = _build_validation_summary(
+            df,
+            dependent_var,
+            independent_vars,
+            model_type,
+        )
+        comparison_rows = _build_model_comparison(
+            df,
+            dependent_var,
+            independent_vars,
+        )
 
         # Generate forecast
         forecast_engine = ForecastEngine()
@@ -98,6 +109,8 @@ def run_regression():
             "diagnostics": diag_table.to_dict(orient="records"),
             "forecast": forecast.forecast_table.to_dict(orient="records"),
             "elasticities": engine.get_elasticities(result),
+            "validation": validation,
+            "model_comparison": comparison_rows,
             "charts": charts,
             "excel_file": os.path.basename(excel_path),
         })
@@ -195,3 +208,90 @@ def _build_regression_charts(result, forecast, original_data):
     charts["residuals"] = json.loads(json.dumps(fig2.to_dict(), cls=plotly.utils.PlotlyJSONEncoder))
 
     return charts
+
+
+def _build_model_comparison(df, dependent_var, independent_vars):
+    """Compare supported model specifications on the same variable set."""
+    rows = []
+    for candidate in RegressionEngine.VALID_MODEL_TYPES:
+        try:
+            result = RegressionEngine().fit(
+                data=df,
+                dependent_var=dependent_var,
+                independent_vars=independent_vars,
+                model_type=candidate,
+            )
+            rows.append({
+                "Model": candidate.replace("_", "-").title(),
+                "Status": "Available",
+                "R-squared": round(result.r_squared, 4),
+                "Adj. R-squared": round(result.adj_r_squared, 4),
+                "AIC": round(result.aic, 2),
+                "BIC": round(result.bic, 2),
+            })
+        except Exception as exc:
+            rows.append({
+                "Model": candidate.replace("_", "-").title(),
+                "Status": f"Unavailable: {str(exc).splitlines()[0]}",
+                "R-squared": None,
+                "Adj. R-squared": None,
+                "AIC": None,
+                "BIC": None,
+            })
+    return rows
+
+
+def _build_validation_summary(df, dependent_var, independent_vars, model_type):
+    """Hold out the most recent observations and assess forecast accuracy."""
+    working_cols = [dependent_var] + independent_vars
+    if "Year" in df.columns:
+        working_cols = ["Year"] + working_cols
+
+    clean_df = df[working_cols].dropna().copy()
+    if len(clean_df) < max(12, len(independent_vars) + 7):
+        return None
+
+    holdout = min(max(len(clean_df) // 5, 4), 8)
+    train_df = clean_df.iloc[:-holdout].copy()
+    test_df = clean_df.iloc[-holdout:].copy()
+    if len(train_df) < len(independent_vars) + 3:
+        return None
+
+    train_engine = RegressionEngine()
+    train_result = train_engine.fit(
+        data=train_df,
+        dependent_var=dependent_var,
+        independent_vars=independent_vars,
+        model_type=model_type,
+    )
+    predictions = train_engine.predict(train_result, test_df)
+    pred_col = [c for c in predictions.columns if c.endswith("(Predicted)")][0]
+
+    actual = pd.to_numeric(test_df[dependent_var], errors="coerce")
+    predicted = pd.to_numeric(predictions[pred_col], errors="coerce")
+    error = predicted - actual
+    abs_pct_error = (error.abs() / actual.replace(0, pd.NA).abs()) * 100
+
+    detail = pd.DataFrame({
+        "Year": test_df["Year"] if "Year" in test_df.columns else range(1, len(test_df) + 1),
+        "Actual": actual.round(4),
+        "Predicted": predicted.round(4),
+        "Error": error.round(4),
+        "Abs Error (%)": abs_pct_error.round(2),
+    })
+
+    rmse = float((error.pow(2).mean()) ** 0.5)
+    mape = float(abs_pct_error.dropna().mean()) if not abs_pct_error.dropna().empty else None
+    bias = float((error.mean() / actual.mean()) * 100) if actual.mean() else None
+
+    return {
+        "summary": {
+            "Holdout Observations": int(holdout),
+            "Train End Year": int(train_df["Year"].max()) if "Year" in train_df.columns else len(train_df),
+            "Test Start Year": int(test_df["Year"].min()) if "Year" in test_df.columns else len(train_df) + 1,
+            "RMSE": round(rmse, 4),
+            "MAPE (%)": round(mape, 2) if mape is not None else None,
+            "Bias (%)": round(bias, 2) if bias is not None else None,
+        },
+        "detail": detail.to_dict(orient="records"),
+    }

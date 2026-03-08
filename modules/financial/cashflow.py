@@ -32,7 +32,7 @@ class CashFlowAnalyzer:
         """
         cf = result.cashflow_table.copy()
         summary = cf[[
-            "Year", "Revenue", "OPEX", "Debt Service", "Tax",
+            "Year", "Revenue", "OPEX", "Debt Service", "Project Tax",
             "Net Cash Flow", "Cumulative Cash Flow",
             "Discounted CF", "Cumulative Discounted CF"
         ]].copy()
@@ -78,7 +78,7 @@ class CashFlowAnalyzer:
 
         # Total lifetime revenue
         total_revenue = cf.loc[cf["Year"] > 0, "Revenue"].sum()
-        total_costs = cf.loc[cf["Year"] > 0, "Total Costs"].sum() + result.capex
+        total_costs = cf.loc[cf["Year"] > 0, "Project Cost Basis"].sum() + result.capex
         total_generation = cf.loc[cf["Year"] > 0, "Generation (MWh)"].sum()
         total_net_cf = cf["Net Cash Flow"].sum()
 

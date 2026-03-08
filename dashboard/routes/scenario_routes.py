@@ -38,9 +38,13 @@ def run_scenario():
         if "projection_horizon" in params:
             config["projection_horizon"] = int(params["projection_horizon"])
 
-        # Build config from direct GWh sector demands if provided
+        uploaded_data = params.get("uploaded_data")
         sector_demands = params.get("sector_demands")
-        if sector_demands and len(sector_demands) > 0:
+
+        # Uploaded sector-fuel matrix takes precedence over simplified manual input.
+        if uploaded_data:
+            config = _build_uploaded_scenario_config(uploaded_data, config)
+        elif sector_demands and len(sector_demands) > 0:
             GWH_TO_PJ = 0.0036  # 1 GWh = 0.0036 PJ
 
             # Build sectors dict from GWh inputs
@@ -113,20 +117,29 @@ def run_scenario():
 
         emissions_data = {}
         scenario_emissions = {}
+        supply_outputs = {}
         for name, result in results.items():
             demand_em = emissions_engine.calculate_demand_emissions(result)
             supply_em = emissions_engine.calculate_supply_emissions(result, gen_mix)
             total_em = emissions_engine.get_total_emissions(demand_em, supply_em)
             emissions_data[name] = total_em
             scenario_emissions[name] = total_em
+            supply_outputs[name] = _build_supply_output(config, name, result, PJ_TO_GWH)
 
         emissions_comparison = emissions_engine.compare_scenario_emissions(scenario_emissions)
+        supply_summary = _build_supply_summary(supply_outputs, PJ_TO_GWH)
 
         # Convert comparison table to GWh
         comparison_gwh = comparison * PJ_TO_GWH
 
         # Build charts (pass GWh data)
-        charts = _build_scenario_charts(comparison_gwh, emissions_comparison, results, PJ_TO_GWH)
+        charts = _build_scenario_charts(
+            comparison_gwh,
+            emissions_comparison,
+            results,
+            supply_outputs,
+            PJ_TO_GWH,
+        )
 
         # Export Excel
         exporter = ScenarioExcelExport(current_app.config["OUTPUT_DIR"])
@@ -142,6 +155,7 @@ def run_scenario():
             demand_comparison=comparison,
             emissions_data=emissions_data,
             emissions_comparison=emissions_comparison,
+            supply_data={name: output["generation_requirements"] for name, output in supply_outputs.items()},
         )
 
         # Serialize (GWh for demand values)
@@ -201,6 +215,7 @@ def run_scenario():
             "scenario_summary": summary_json,
             "demand_comparison": comparison_gwh_json,
             "emissions_comparison": emissions_json,
+            "supply_summary": supply_summary,
             "charts": charts,
             "excel_file": os.path.basename(excel_path),
         })
@@ -222,7 +237,156 @@ def download_scenario(filename):
     return jsonify({"error": "File not found"}), 404
 
 
-def _build_scenario_charts(comparison_gwh, emissions_comparison, results, pj_to_gwh):
+def _build_uploaded_scenario_config(rows, base_config):
+    """Convert uploaded sector-fuel matrix rows into a LEAP-style config."""
+    uploaded_df = pd.DataFrame(rows)
+    required = {"Sector", "Fuel", "Base_Year_Demand_PJ"}
+    missing = required - set(uploaded_df.columns)
+    if missing:
+        raise ValueError(
+            "Uploaded scenario data is missing required columns: "
+            + ", ".join(sorted(missing))
+        )
+
+    uploaded_df["Base_Year_Demand_PJ"] = pd.to_numeric(
+        uploaded_df["Base_Year_Demand_PJ"], errors="coerce"
+    )
+    if uploaded_df["Base_Year_Demand_PJ"].isna().any():
+        raise ValueError("Base_Year_Demand_PJ must be numeric for all uploaded rows.")
+
+    config = dict(base_config)
+    sectors = {}
+    bau_growth = {}
+    low_growth = {}
+    high_growth = {}
+    bau_intensity = {}
+    low_intensity = {}
+    high_intensity = {}
+    low_switching = {}
+
+    for sector_name, sector_df in uploaded_df.groupby("Sector", sort=False):
+        total_pj = float(sector_df["Base_Year_Demand_PJ"].sum())
+        if total_pj <= 0:
+            raise ValueError(f"Sector '{sector_name}' has no positive base-year demand.")
+
+        fuel_totals = (
+            sector_df.groupby("Fuel")["Base_Year_Demand_PJ"].sum().sort_index()
+        )
+        sectors[str(sector_name)] = {
+            "activity_level": 1.0,
+            "activity_unit": "index",
+            "energy_intensity": total_pj * 1000,
+            "intensity_unit": "GJ/index",
+            "fuel_shares": {
+                fuel: round(float(value / total_pj), 6)
+                for fuel, value in fuel_totals.items()
+                if value > 0
+            },
+        }
+
+        first_row = sector_df.iloc[0]
+        bau_growth[str(sector_name)] = float(first_row.get("Activity_Growth_Rate", 0.03) or 0.03)
+        low_growth[str(sector_name)] = float(first_row.get("Low_Carbon_Growth_Rate", bau_growth[str(sector_name)] * 0.75) or bau_growth[str(sector_name)] * 0.75)
+        high_growth[str(sector_name)] = float(first_row.get("High_Growth_Rate", bau_growth[str(sector_name)] * 1.25) or bau_growth[str(sector_name)] * 1.25)
+
+        base_intensity_change = float(first_row.get("Intensity_Change_Rate", -0.01) or -0.01)
+        bau_intensity[str(sector_name)] = base_intensity_change
+        low_intensity[str(sector_name)] = float(first_row.get("Low_Carbon_Intensity_Change_Rate", base_intensity_change * 1.5) or base_intensity_change * 1.5)
+        high_intensity[str(sector_name)] = float(first_row.get("High_Growth_Intensity_Change_Rate", base_intensity_change * 0.75) or base_intensity_change * 0.75)
+
+        target_fuel = first_row.get("Target_Fuel")
+        switch_rate = float(first_row.get("Fuel_Switch_Rate", 0.0) or 0.0)
+        if target_fuel and switch_rate > 0:
+            low_switching[str(sector_name)] = {
+                "target_fuel": str(target_fuel),
+                "shift_per_year": switch_rate,
+            }
+
+    config["sectors"] = sectors
+    config["scenarios"] = {
+        "BAU": {
+            "description": "Uploaded baseline growth assumptions",
+            "activity_growth": bau_growth,
+            "intensity_change": bau_intensity,
+            "fuel_switching": {},
+        },
+        "Low Carbon": {
+            "description": "Uploaded low-carbon case",
+            "activity_growth": low_growth,
+            "intensity_change": low_intensity,
+            "fuel_switching": low_switching,
+        },
+        "High Growth": {
+            "description": "Uploaded high-growth case",
+            "activity_growth": high_growth,
+            "intensity_change": high_intensity,
+            "fuel_switching": {},
+        },
+    }
+    return config
+
+
+def _build_supply_output(config, scenario_name, result, pj_to_gwh):
+    """Build supply-side outputs for a scenario."""
+    supply = SupplyTransformation(config.get("supply", {}))
+    horizon = len(result.total_demand_by_year.index) - 1
+    growth_map = {
+        "BAU": {"renewable_growth": 0.01, "coal_reduction": 0.005},
+        "Low Carbon": {"renewable_growth": 0.03, "coal_reduction": 0.02},
+        "High Growth": {"renewable_growth": 0.015, "coal_reduction": 0.0075},
+    }
+    mix_df = supply.project_generation_mix(
+        years=horizon,
+        scenario=scenario_name,
+        **growth_map.get(scenario_name, {"renewable_growth": 0.01, "coal_reduction": 0.005}),
+    )
+    mix_df.index = result.total_demand_by_year.index
+    mix_df.index.name = "Year"
+
+    electricity_demand = result.demand_by_fuel_by_year.get(
+        "Electricity",
+        pd.Series(0.0, index=result.total_demand_by_year.index),
+    )
+    generation_requirements = supply.calculate_generation_requirements(electricity_demand)
+    generation_requirements.index = result.total_demand_by_year.index
+    generation_requirements.index.name = "Year"
+
+    generation_by_source = supply.get_generation_by_source(
+        generation_requirements["Gross Generation (PJ)"],
+        mix_df.rename_axis("Year_Offset"),
+    )
+    generation_by_source.index = result.total_demand_by_year.index
+    generation_by_source.index.name = "Year"
+
+    return {
+        "generation_mix": mix_df.round(4),
+        "generation_requirements": generation_requirements.round(4),
+        "generation_by_source": generation_by_source.round(4),
+    }
+
+
+def _build_supply_summary(supply_outputs, pj_to_gwh):
+    """Summarize the final-year supply outlook for each scenario."""
+    rows = []
+    renewable_sources = {"Hydro", "Solar", "Wind"}
+    thermal_sources = {"Coal", "Natural Gas", "Oil Products"}
+
+    for scenario_name, output in supply_outputs.items():
+        mix_last = output["generation_mix"].iloc[-1]
+        req_last = output["generation_requirements"].iloc[-1]
+        rows.append({
+            "Scenario": scenario_name,
+            "Final Gross Generation (GWh)": round(req_last["Gross Generation (PJ)"] * pj_to_gwh, 2),
+            "Final Primary Energy Input (PJ)": round(req_last["Primary Energy Input (PJ)"], 2),
+            "Final T&D Losses (GWh)": round(req_last["T&D Losses (PJ)"] * pj_to_gwh, 2),
+            "Renewable Share (%)": round(float(mix_last[[c for c in mix_last.index if c in renewable_sources]].sum() * 100), 2),
+            "Thermal Share (%)": round(float(mix_last[[c for c in mix_last.index if c in thermal_sources]].sum() * 100), 2),
+        })
+
+    return rows
+
+
+def _build_scenario_charts(comparison_gwh, emissions_comparison, results, supply_outputs, pj_to_gwh):
     """Build Plotly chart JSON for the scenario dashboard (GWh units)."""
     charts = {}
 
@@ -301,6 +465,60 @@ def _build_scenario_charts(comparison_gwh, emissions_comparison, results, pj_to_
     )
     charts["sector_breakdown"] = json.loads(
         json.dumps(fig3.to_dict(), cls=plotly.utils.PlotlyJSONEncoder)
+    )
+
+    # Generation mix for first scenario
+    supply_first = supply_outputs[first_name]
+    mix_df = supply_first["generation_mix"] * 100
+    fig4 = go.Figure()
+    for col in mix_df.columns:
+        fig4.add_trace(go.Scatter(
+            x=mix_df.index.tolist(),
+            y=mix_df[col].round(2).tolist(),
+            name=col,
+            mode="lines",
+            stackgroup="one",
+        ))
+    fig4.update_layout(
+        template="plotly_dark",
+        title=f"Generation Mix Evolution — {first_name}",
+        xaxis_title="Year",
+        yaxis_title="Share of Generation (%)",
+        paper_bgcolor="#1a1a2e",
+        plot_bgcolor="#16213e",
+        font=dict(color="#e0e0e0"),
+    )
+    charts["generation_mix"] = json.loads(
+        json.dumps(fig4.to_dict(), cls=plotly.utils.PlotlyJSONEncoder)
+    )
+
+    req_df = supply_first["generation_requirements"]
+    fig5 = go.Figure()
+    fig5.add_trace(go.Scatter(
+        x=req_df.index.tolist(),
+        y=(req_df["Gross Generation (PJ)"] * pj_to_gwh).round(2).tolist(),
+        name="Gross Generation",
+        mode="lines",
+        line=dict(color="#4FC3F7", width=2),
+    ))
+    fig5.add_trace(go.Scatter(
+        x=req_df.index.tolist(),
+        y=(req_df["T&D Losses (PJ)"] * pj_to_gwh).round(2).tolist(),
+        name="T&D Losses",
+        mode="lines",
+        line=dict(color="#FFA726", width=2, dash="dash"),
+    ))
+    fig5.update_layout(
+        template="plotly_dark",
+        title=f"Generation Requirement — {first_name}",
+        xaxis_title="Year",
+        yaxis_title="Energy (GWh)",
+        paper_bgcolor="#1a1a2e",
+        plot_bgcolor="#16213e",
+        font=dict(color="#e0e0e0"),
+    )
+    charts["generation_requirements"] = json.loads(
+        json.dumps(fig5.to_dict(), cls=plotly.utils.PlotlyJSONEncoder)
     )
 
     return charts

@@ -160,6 +160,12 @@ def _scenario_template():
                 "Base_Year_Demand_PJ": round(5 + hash(sector + fuel) % 20, 2),
                 "Activity_Growth_Rate": 0.03,
                 "Intensity_Change_Rate": -0.01,
+                "Low_Carbon_Growth_Rate": 0.02,
+                "High_Growth_Rate": 0.05,
+                "Low_Carbon_Intensity_Change_Rate": -0.02,
+                "High_Growth_Intensity_Change_Rate": -0.005,
+                "Target_Fuel": "Electricity" if fuel != "Electricity" else "",
+                "Fuel_Switch_Rate": 0.01 if fuel != "Electricity" else 0.0,
             })
     return pd.DataFrame(rows)
 

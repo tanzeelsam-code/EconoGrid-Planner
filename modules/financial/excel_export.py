@@ -92,7 +92,10 @@ class FinancialExcelExport:
             if cell.value and "NPV" in str(cell.value):
                 val_cell = ws.cell(row=r, column=2)
                 try:
-                    npv_val = result.npv
+                    if "Equity NPV" in str(cell.value):
+                        npv_val = result.equity_npv
+                    else:
+                        npv_val = result.npv
                     formatter.apply_conditional_fill(ws, r, 2, npv_val, positive_good=True)
                 except:
                     pass
