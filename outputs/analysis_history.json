@@ -1,0 +1,47 @@
+[
+  {
+    "record_id": "1eb55e7a",
+    "module": "financial",
+    "timestamp": "2026-03-08T23:24:37.329242",
+    "input_summary": {
+      "module": "monte_carlo",
+      "n_sim": 200
+    },
+    "result_summary": {
+      "prob_positive_npv": 0.0
+    },
+    "duration_seconds": 0.01,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "record_id": "0ee4a955",
+    "module": "regression",
+    "timestamp": "2026-03-08T23:24:37.787370",
+    "input_summary": {
+      "module": "arima",
+      "method": "arima"
+    },
+    "result_summary": {
+      "aic": 334.3
+    },
+    "duration_seconds": 0.448,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "record_id": "f0cdc671",
+    "module": "scenario",
+    "timestamp": "2026-03-08T23:24:37.805538",
+    "input_summary": {
+      "module": "renewable_targets",
+      "scenario": "all"
+    },
+    "result_summary": {
+      "target_year": 2050
+    },
+    "duration_seconds": 0.011,
+    "success": true,
+    "error_message": ""
+  }
+]
