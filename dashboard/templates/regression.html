@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block title %}EconoGrid Planner — Regression Analysis{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><span class="page-icon">📊</span> Regression Engine <span class="page-badge">EViews-Equivalent</span></h1>
+    <p>OLS regression with elasticity estimation, diagnostic tests, and 30-year demand forecasting</p>
+</div>
+
+<!-- Data Upload -->
+<div class="control-panel upload-panel">
+    <h3>📁 Data Source</h3>
+    <div class="data-source-toggle">
+        <button class="toggle-btn active" id="btn-sample-data" onclick="toggleDataSource('sample')">Use Sample
+            Data</button>
+        <button class="toggle-btn" id="btn-upload-data" onclick="toggleDataSource('upload')">Upload CSV / Excel</button>
+        <a href="/api/upload/template/regression" class="btn btn-secondary btn-sm">📄 Download Template</a>
+    </div>
+    <div class="upload-area" id="upload-area" style="display:none">
+        <div class="drop-zone" id="drop-zone-reg" ondragover="event.preventDefault(); this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event, 'regression')">
+            <input type="file" id="file-input-reg" accept=".csv,.xlsx,.xls"
+                onchange="handleFileSelect(this, 'regression')" style="display:none">
+            <p>📂 <strong>Drag & drop</strong> your file here or <a href="#"
+                    onclick="document.getElementById('file-input-reg').click(); return false;">browse</a></p>
+            <p class="help-text">CSV or Excel with columns: Year, Dependent Variable, Independent Variables</p>
+        </div>
+        <div class="upload-preview" id="upload-preview-reg" style="display:none">
+            <div class="preview-header">
+                <span class="preview-filename" id="preview-filename-reg"></span>
+                <button class="btn btn-sm" onclick="clearUpload('regression')">✕ Clear</button>
+            </div>
+            <div class="preview-info" id="preview-info-reg"></div>
+            <div class="form-grid" id="column-selectors-reg"></div>
+            <div class="table-container preview-table" id="preview-table-reg"></div>
+        </div>
+    </div>
+</div>
+
+<div class="control-panel">
+    <h3>Model Parameters</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="model-type">Model Specification</label>
+            <select id="model-type">
+                <option value="log_log" selected>Log-Log (Elasticity)</option>
+                <option value="linear">Linear</option>
+                <option value="semi_log">Semi-Log</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="dep-var">Dependent Variable</label>
+            <select id="dep-var">
+                <option value="Electricity_Demand_GWh">Electricity Demand (GWh)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="gdp-growth">GDP Growth Rate (%)</label>
+            <input type="number" id="gdp-growth" value="4.0" step="0.5" min="0" max="15">
+        </div>
+        <div class="form-group">
+            <label for="pop-growth">Population Growth (%)</label>
+            <input type="number" id="pop-growth" value="2.0" step="0.5" min="0" max="10">
+        </div>
+        <div class="form-group">
+            <label for="price-growth">Electricity Price Growth (%)</label>
+            <input type="number" id="price-growth" value="1.0" step="0.5" min="-5" max="10">
+        </div>
+    </div>
+    <div class="button-group">
+        <button class="btn btn-primary" id="run-regression" onclick="runRegression()">
+            ▶ Run Regression
+        </button>
+        <button class="btn btn-secondary" id="download-excel-reg" onclick="downloadExcel('regression')" disabled>
+            📥 Download Excel
+        </button>
+    </div>
+</div>
+
+<!-- Status -->
+<div class="status-bar" id="reg-status" style="display:none">
+    <span class="status-icon">⏳</span>
+    <span class="status-text" id="reg-status-text">Running analysis...</span>
+</div>
+
+<!-- Results -->
+<div class="results-section" id="reg-results" style="display:none">
+    <div class="metrics-grid" id="reg-metrics"></div>
+    <div class="result-card">
+        <h3>Coefficient Table</h3>
+        <div class="table-container" id="reg-coeff-table"></div>
+    </div>
+    <div class="result-card">
+        <h3>Diagnostic Tests</h3>
+        <div class="table-container" id="reg-diag-table"></div>
+    </div>
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div id="forecast-chart" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+            <div id="residuals-chart" class="chart-container"></div>
+        </div>
+    </div>
+    <div class="result-card">
+        <h3>EViews-Style Summary</h3>
+        <pre class="summary-text" id="reg-summary-text"></pre>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let regExcelFile = null;
+    let regUploadedData = null;
+    let regUseUpload = false;
+
+    function toggleDataSource(mode) {
+        const uploadArea = document.getElementById('upload-area');
+        const btnSample = document.getElementById('btn-sample-data');
+        const btnUpload = document.getElementById('btn-upload-data');
+
+        if (mode === 'upload') {
+            uploadArea.style.display = 'block';
+            btnUpload.classList.add('active');
+            btnSample.classList.remove('active');
+            regUseUpload = true;
+        } else {
+            uploadArea.style.display = 'none';
+            btnSample.classList.add('active');
+            btnUpload.classList.remove('active');
+            regUseUpload = false;
+        }
+    }
+
+    function handleDrop(e, module) {
+        e.preventDefault();
+        e.target.closest('.drop-zone').classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file) uploadFile(file, module);
+    }
+
+    function handleFileSelect(input, module) {
+        const file = input.files[0];
+        if (file) uploadFile(file, module);
+    }
+
+    async function uploadFile(file, module) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('/api/upload/parse', { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                regUploadedData = data;
+                showUploadPreview(data, module);
+            } else {
+                alert('Upload error: ' + data.message);
+            }
+        } catch (err) {
+            alert('Upload failed: ' + err.message);
+        }
+    }
+
+    function showUploadPreview(data, module) {
+        document.getElementById(`upload-preview-${module}`).style.display = 'block';
+        document.getElementById(`drop-zone-${module}`).style.display = 'none';
+        document.getElementById(`preview-filename-${module}`).textContent =
+            `${data.filename} — ${data.rows} rows, ${data.columns.length} columns`;
+
+        // Column selectors for regression
+        if (module === 'regression') {
+            const depSelect = document.getElementById('dep-var');
+            depSelect.innerHTML = '';
+            data.numeric_columns.forEach(col => {
+                const opt = document.createElement('option');
+                opt.value = col; opt.textContent = col;
+                depSelect.appendChild(opt);
+            });
+
+            // Info
+            document.getElementById('preview-info-reg').innerHTML =
+                `<span class="badge">Numeric columns: ${data.numeric_columns.join(', ')}</span>`;
+
+            // Column selector for independent vars
+            document.getElementById('column-selectors-reg').innerHTML = `
+            <div class="form-group" style="grid-column: 1 / -1">
+                <label>Independent Variables (select columns)</label>
+                <div class="checkbox-grid" id="indep-vars-checkboxes">
+                    ${data.numeric_columns.map(col =>
+                `<label class="checkbox-label">
+                            <input type="checkbox" value="${col}" ${col !== data.numeric_columns[0] ? 'checked' : ''}>
+                            ${col}
+                        </label>`
+            ).join('')}
+                </div>
+            </div>
+        `;
+        }
+
+        // Preview table
+        document.getElementById(`preview-table-${module}`).innerHTML =
+            buildTable(data.preview, data.columns);
+    }
+
+    function clearUpload(module) {
+        document.getElementById(`upload-preview-${module}`).style.display = 'none';
+        document.getElementById(`drop-zone-${module}`).style.display = 'block';
+        regUploadedData = null;
+
+        if (module === 'regression') {
+            const depSelect = document.getElementById('dep-var');
+            depSelect.innerHTML = '<option value="Electricity_Demand_GWh">Electricity Demand (GWh)</option>';
+            document.getElementById('column-selectors-reg').innerHTML = '';
+            document.getElementById('preview-info-reg').innerHTML = '';
+        }
+    }
+
+    async function runRegression() {
+        const btn = document.getElementById('run-regression');
+        const status = document.getElementById('reg-status');
+        const results = document.getElementById('reg-results');
+
+        btn.disabled = true;
+        btn.textContent = '⏳ Running...';
+        status.style.display = 'flex';
+        status.className = 'status-bar running';
+        document.getElementById('reg-status-text').textContent = 'Running regression analysis...';
+
+        // Build request body
+        const body = {
+            model_type: document.getElementById('model-type').value,
+            dependent_var: document.getElementById('dep-var').value,
+            growth_assumptions: {
+                GDP_Billion_USD: parseFloat(document.getElementById('gdp-growth').value) / 100,
+                Population_Million: parseFloat(document.getElementById('pop-growth').value) / 100,
+                Electricity_Price_USD_kWh: parseFloat(document.getElementById('price-growth').value) / 100,
+            }
+        };
+
+        // If using uploaded data, include it
+        if (regUseUpload && regUploadedData) {
+            body.data = regUploadedData.data;
+
+            // Get selected independent vars
+            const checkboxes = document.querySelectorAll('#indep-vars-checkboxes input:checked');
+            body.independent_vars = Array.from(checkboxes).map(cb => cb.value);
+
+            // Rebuild growth assumptions from selected vars
+            const growthAssumptions = {};
+            body.independent_vars.forEach(v => { growthAssumptions[v] = 0.03; });
+            body.growth_assumptions = growthAssumptions;
+        }
+
+        try {
+            const response = await fetch('/api/regression/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                displayRegressionResults(data);
+                results.style.display = 'block';
+                status.className = 'status-bar success';
+                document.getElementById('reg-status-text').textContent = '✅ Analysis complete';
+                regExcelFile = data.excel_file;
+                document.getElementById('download-excel-reg').disabled = false;
+            } else {
+                status.className = 'status-bar error';
+                document.getElementById('reg-status-text').textContent = '❌ Error: ' + data.message;
+            }
+        } catch (err) {
+            status.className = 'status-bar error';
+            document.getElementById('reg-status-text').textContent = '❌ Error: ' + err.message;
+        }
+
+        btn.disabled = false;
+        btn.textContent = '▶ Run Regression';
+    }
+
+    function displayRegressionResults(data) {
+        const stats = data.model_stats;
+        const metricsHtml = `
+        <div class="metric-card"><div class="metric-value">${stats['R-squared'].toFixed(4)}</div><div class="metric-label">R²</div></div>
+        <div class="metric-card"><div class="metric-value">${stats['Adjusted R-squared'].toFixed(4)}</div><div class="metric-label">Adj. R²</div></div>
+        <div class="metric-card"><div class="metric-value">${stats['F-statistic'].toFixed(2)}</div><div class="metric-label">F-Statistic</div></div>
+        <div class="metric-card"><div class="metric-value">${stats['Durbin-Watson'].toFixed(4)}</div><div class="metric-label">Durbin-Watson</div></div>
+    `;
+        document.getElementById('reg-metrics').innerHTML = metricsHtml;
+
+        document.getElementById('reg-coeff-table').innerHTML = buildTable(
+            data.coefficients, ['Variable', 'Coefficient', 'Std. Error', 't-Statistic', 'Prob.']
+        );
+        document.getElementById('reg-diag-table').innerHTML = buildTable(
+            data.diagnostics, ['Test', 'Statistic', 'P-Value', 'Conclusion']
+        );
+
+        if (data.charts.forecast) Plotly.newPlot('forecast-chart', data.charts.forecast.data, data.charts.forecast.layout, { responsive: true });
+        if (data.charts.residuals) Plotly.newPlot('residuals-chart', data.charts.residuals.data, data.charts.residuals.layout, { responsive: true });
+
+        document.getElementById('reg-summary-text').textContent = data.summary_text;
+    }
+
+    function downloadExcel(module) {
+        if (module === 'regression' && regExcelFile) {
+            window.location.href = `/api/regression/download/${regExcelFile}`;
+        }
+    }
+</script>
+{% endblock %}

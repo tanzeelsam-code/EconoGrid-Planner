@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+{% block title %}EconoGrid Planner — Scenario Analysis{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><span class="page-icon">🔋</span> Scenario Model <span class="page-badge">LEAP-Equivalent</span></h1>
+    <p>Bottom-up energy planning with multi-scenario demand, supply, and emissions projections</p>
+</div>
+
+<!-- Data Upload -->
+<div class="control-panel upload-panel">
+    <h3>📁 Data Source</h3>
+    <div class="data-source-toggle">
+        <button class="toggle-btn active" id="btn-sample-scn" onclick="toggleScnSource('sample')">Use Sample
+            Data</button>
+        <button class="toggle-btn" id="btn-upload-scn" onclick="toggleScnSource('upload')">Upload CSV / Excel</button>
+        <a href="/api/upload/template/scenario" class="btn btn-secondary btn-sm">📄 Download Template</a>
+    </div>
+    <div class="upload-area" id="upload-area-scn" style="display:none">
+        <div class="drop-zone" id="drop-zone-scn" ondragover="event.preventDefault(); this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')" ondrop="handleScnDrop(event)">
+            <input type="file" id="file-input-scn" accept=".csv,.xlsx,.xls" onchange="handleScnFile(this)"
+                style="display:none">
+            <p>📂 <strong>Drag & drop</strong> your file here or <a href="#"
+                    onclick="document.getElementById('file-input-scn').click(); return false;">browse</a></p>
+            <p class="help-text">CSV/Excel with columns: Sector, Fuel, Base_Year_Demand_PJ, Activity_Growth_Rate,
+                Intensity_Change_Rate</p>
+        </div>
+        <div class="upload-preview" id="upload-preview-scn" style="display:none">
+            <div class="preview-header">
+                <span class="preview-filename" id="preview-filename-scn"></span>
+                <button class="btn btn-sm" onclick="clearScnUpload()">✕ Clear</button>
+            </div>
+            <div class="table-container preview-table" id="preview-table-scn"></div>
+        </div>
+    </div>
+</div>
+
+<div class="control-panel">
+    <h3>Scenario Parameters</h3>
+    <p class="help-text">Configure planning parameters, then run all 3 scenarios (BAU, Low Carbon, High Growth)</p>
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="base-year">Base Year</label>
+            <input type="number" id="base-year" value="2022" min="2000" max="2030" step="1">
+        </div>
+        <div class="form-group">
+            <label for="projection-horizon">Projection Horizon (years)</label>
+            <input type="number" id="projection-horizon" value="30" min="5" max="50" step="5">
+        </div>
+        <div class="form-group">
+            <label for="population">Population (million) <small
+                    style="color:var(--text-muted)">(optional)</small></label>
+            <input type="number" id="population" value="" placeholder="e.g. 220" step="1">
+        </div>
+        <div class="form-group">
+            <label for="pop-growth-rate">Population Growth (% / yr)</label>
+            <input type="number" id="pop-growth-rate" value="2.0" step="0.1" min="0" max="10">
+        </div>
+        <div class="form-group">
+            <label for="summer-lf">Summer Load Factor</label>
+            <input type="number" id="summer-lf" value="0.60" step="0.05" min="0.2" max="0.95">
+        </div>
+        <div class="form-group">
+            <label for="winter-lf">Winter Load Factor</label>
+            <input type="number" id="winter-lf" value="0.45" step="0.05" min="0.2" max="0.95">
+        </div>
+        <div class="form-group">
+            <label for="reserve-margin">Reserve Margin (%)</label>
+            <input type="number" id="reserve-margin" value="15" step="5" min="0" max="50">
+        </div>
+    </div>
+
+    <!-- Sector Base Demand Table -->
+    <h3 style="margin-top:1.25rem">⚡ Base Demand by Sector</h3>
+    <p class="help-text">Enter the base year electricity demand for each sector in GWh</p>
+    <div class="table-container">
+        <table class="data-table" id="sector-demand-table">
+            <thead>
+                <tr>
+                    <th>Sector</th>
+                    <th>Base Demand (GWh)</th>
+                    <th>BAU Growth (%/yr)</th>
+                    <th>Low Carbon Growth (%/yr)</th>
+                    <th>High Growth (%/yr)</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><input type="text" class="table-input sector-name" value="Residential"></td>
+                    <td><input type="number" class="table-input sector-demand" value="12500" step="100"></td>
+                    <td><input type="number" class="table-input sector-bau" value="5.0" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-low" value="3.0" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-high" value="7.0" step="0.5"></td>
+                    <td><button class="btn-remove" onclick="removeRow(this)">✕</button></td>
+                </tr>
+                <tr>
+                    <td><input type="text" class="table-input sector-name" value="Commercial"></td>
+                    <td><input type="number" class="table-input sector-demand" value="8200" step="100"></td>
+                    <td><input type="number" class="table-input sector-bau" value="4.5" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-low" value="2.5" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-high" value="6.5" step="0.5"></td>
+                    <td><button class="btn-remove" onclick="removeRow(this)">✕</button></td>
+                </tr>
+                <tr>
+                    <td><input type="text" class="table-input sector-name" value="Industrial"></td>
+                    <td><input type="number" class="table-input sector-demand" value="25000" step="100"></td>
+                    <td><input type="number" class="table-input sector-bau" value="3.0" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-low" value="1.5" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-high" value="4.5" step="0.5"></td>
+                    <td><button class="btn-remove" onclick="removeRow(this)">✕</button></td>
+                </tr>
+                <tr>
+                    <td><input type="text" class="table-input sector-name" value="Agriculture"></td>
+                    <td><input type="number" class="table-input sector-demand" value="3500" step="100"></td>
+                    <td><input type="number" class="table-input sector-bau" value="2.5" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-low" value="1.5" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-high" value="3.5" step="0.5"></td>
+                    <td><button class="btn-remove" onclick="removeRow(this)">✕</button></td>
+                </tr>
+                <tr>
+                    <td><input type="text" class="table-input sector-name" value="Transport"></td>
+                    <td><input type="number" class="table-input sector-demand" value="5800" step="100"></td>
+                    <td><input type="number" class="table-input sector-bau" value="6.0" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-low" value="4.0" step="0.5"></td>
+                    <td><input type="number" class="table-input sector-high" value="8.0" step="0.5"></td>
+                    <td><button class="btn-remove" onclick="removeRow(this)">✕</button></td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td><strong>TOTAL</strong></td>
+                    <td><strong id="total-demand">55,000</strong></td>
+                    <td colspan="4"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <button class="btn btn-secondary btn-sm" style="margin-top:0.75rem" onclick="addSectorRow()">+ Add Sector</button>
+
+    <div class="button-group" style="margin-top:1.25rem">
+        <button class="btn btn-primary" id="run-scenario" onclick="runScenario()">
+            ▶ Run All Scenarios
+        </button>
+        <button class="btn btn-secondary" id="download-excel-scn" onclick="downloadScenarioExcel()" disabled>
+            📥 Download Excel
+        </button>
+    </div>
+</div>
+
+<div class="status-bar" id="scn-status" style="display:none">
+    <span class="status-icon">⏳</span>
+    <span class="status-text" id="scn-status-text">Running scenarios...</span>
+</div>
+
+<div class="results-section" id="scn-results" style="display:none">
+    <div class="result-card">
+        <h3>Base Year Energy Balance</h3>
+        <div class="metrics-grid" id="scn-base-metrics"></div>
+        <div class="two-col-grid">
+            <div>
+                <h4>Demand by Sector (GWh)</h4>
+                <div id="scn-sector-table" class="table-container"></div>
+            </div>
+            <div>
+                <h4>Demand by Fuel (GWh)</h4>
+                <div id="scn-fuel-table" class="table-container"></div>
+            </div>
+        </div>
+    </div>
+    <div class="result-card">
+        <h3>Scenario Summary</h3>
+        <div class="table-container" id="scn-summary-table"></div>
+    </div>
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div id="demand-comparison-chart" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+            <div id="emissions-comparison-chart" class="chart-container"></div>
+        </div>
+    </div>
+    <div class="chart-card full-width">
+        <div id="sector-breakdown-chart" class="chart-container"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let scnExcelFile = null;
+    let scnUploadedData = null;
+    let scnUseUpload = false;
+
+    function toggleScnSource(mode) {
+        const area = document.getElementById('upload-area-scn');
+        document.getElementById('btn-sample-scn').classList.toggle('active', mode === 'sample');
+        document.getElementById('btn-upload-scn').classList.toggle('active', mode === 'upload');
+        area.style.display = mode === 'upload' ? 'block' : 'none';
+        scnUseUpload = mode === 'upload';
+    }
+
+    function handleScnDrop(e) {
+        e.preventDefault();
+        e.target.closest('.drop-zone').classList.remove('drag-over');
+        if (e.dataTransfer.files[0]) uploadScnFile(e.dataTransfer.files[0]);
+    }
+
+    function handleScnFile(input) {
+        if (input.files[0]) uploadScnFile(input.files[0]);
+    }
+
+    async function uploadScnFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const res = await fetch('/api/upload/parse', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.status === 'success') {
+                scnUploadedData = data;
+                document.getElementById('upload-preview-scn').style.display = 'block';
+                document.getElementById('drop-zone-scn').style.display = 'none';
+                document.getElementById('preview-filename-scn').textContent =
+                    `${data.filename} — ${data.rows} rows, ${data.columns.length} columns`;
+                document.getElementById('preview-table-scn').innerHTML = buildTable(data.preview, data.columns);
+            } else { alert('Upload error: ' + data.message); }
+        } catch (err) { alert('Upload failed: ' + err.message); }
+    }
+
+    function clearScnUpload() {
+        document.getElementById('upload-preview-scn').style.display = 'none';
+        document.getElementById('drop-zone-scn').style.display = 'block';
+        scnUploadedData = null;
+    }
+
+    // ── Sector Demand Table Functions ──────────────────────────
+    function updateTotal() {
+        const inputs = document.querySelectorAll('.sector-demand');
+        let total = 0;
+        inputs.forEach(inp => { total += parseFloat(inp.value) || 0; });
+        document.getElementById('total-demand').textContent = total.toLocaleString();
+    }
+
+    // Auto-update total when any demand input changes
+    document.addEventListener('input', function (e) {
+        if (e.target.classList.contains('sector-demand')) updateTotal();
+    });
+
+    function addSectorRow() {
+        const tbody = document.querySelector('#sector-demand-table tbody');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" class="table-input sector-name" value="New Sector"></td>
+            <td><input type="number" class="table-input sector-demand" value="0" step="100"></td>
+            <td><input type="number" class="table-input sector-bau" value="3.0" step="0.5"></td>
+            <td><input type="number" class="table-input sector-low" value="2.0" step="0.5"></td>
+            <td><input type="number" class="table-input sector-high" value="5.0" step="0.5"></td>
+            <td><button class="btn-remove" onclick="removeRow(this)">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+        updateTotal();
+    }
+
+    function removeRow(btn) {
+        const tbody = document.querySelector('#sector-demand-table tbody');
+        if (tbody.rows.length > 1) {
+            btn.closest('tr').remove();
+            updateTotal();
+        }
+    }
+
+    function getSectorDemands() {
+        const rows = document.querySelectorAll('#sector-demand-table tbody tr');
+        return Array.from(rows).map(row => ({
+            sector: row.querySelector('.sector-name').value,
+            demand_gwh: parseFloat(row.querySelector('.sector-demand').value) || 0,
+            bau_growth: parseFloat(row.querySelector('.sector-bau').value) / 100,
+            low_carbon_growth: parseFloat(row.querySelector('.sector-low').value) / 100,
+            high_growth: parseFloat(row.querySelector('.sector-high').value) / 100,
+        }));
+    }
+
+    // ── Run Scenario ──────────────────────────────────────────
+    async function runScenario() {
+        const btn = document.getElementById('run-scenario');
+        const status = document.getElementById('scn-status');
+        const results = document.getElementById('scn-results');
+
+        btn.disabled = true;
+        btn.textContent = '⏳ Running...';
+        status.style.display = 'flex';
+        status.className = 'status-bar running';
+        document.getElementById('scn-status-text').textContent = 'Running all scenarios...';
+
+        try {
+            const body = {
+                base_year: parseInt(document.getElementById('base-year').value),
+                projection_horizon: parseInt(document.getElementById('projection-horizon').value),
+                sector_demands: getSectorDemands(),
+                summer_load_factor: parseFloat(document.getElementById('summer-lf').value),
+                winter_load_factor: parseFloat(document.getElementById('winter-lf').value),
+                reserve_margin: parseFloat(document.getElementById('reserve-margin').value) / 100,
+            };
+
+            const pop = parseFloat(document.getElementById('population').value);
+            const popGrowth = parseFloat(document.getElementById('pop-growth-rate').value) / 100;
+            if (pop && !isNaN(pop)) {
+                body.population_million = pop;
+                body.population_growth_rate = popGrowth;
+            }
+
+            if (scnUseUpload && scnUploadedData) {
+                body.uploaded_data = scnUploadedData.data;
+            }
+
+            const response = await fetch('/api/scenario/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                displayScenarioResults(data);
+                results.style.display = 'block';
+                status.className = 'status-bar success';
+                document.getElementById('scn-status-text').textContent = '✅ All scenarios complete';
+                scnExcelFile = data.excel_file;
+                document.getElementById('download-excel-scn').disabled = false;
+            } else {
+                status.className = 'status-bar error';
+                document.getElementById('scn-status-text').textContent = '❌ ' + data.message;
+            }
+        } catch (err) {
+            status.className = 'status-bar error';
+            document.getElementById('scn-status-text').textContent = '❌ ' + err.message;
+        }
+        btn.disabled = false;
+        btn.textContent = '▶ Run All Scenarios';
+    }
+
+    function displayScenarioResults(data) {
+        const base = data.base_year;
+        let metricsHtml = `
+            <div class="metric-card"><div class="metric-value">${base.year}</div><div class="metric-label">Base Year</div></div>
+            <div class="metric-card"><div class="metric-value">${base.total_demand_gwh.toLocaleString()}</div><div class="metric-label">Total Demand (GWh)</div></div>
+        `;
+
+        // MW peak demand metrics
+        if (base.summer_peak_mw) {
+            metricsHtml += `
+                <div class="metric-card"><div class="metric-value">${base.summer_peak_mw.toLocaleString()}</div><div class="metric-label">Summer Peak (MW)</div></div>
+                <div class="metric-card accent"><div class="metric-value">${base.winter_peak_mw.toLocaleString()}</div><div class="metric-label">Winter Peak (MW)</div></div>
+                <div class="metric-card" style="border-color:var(--accent-orange)"><div class="metric-value">${base.required_capacity_mw.toLocaleString()}</div><div class="metric-label">Required Capacity (MW)</div></div>
+            `;
+        }
+
+        // Per-capita
+        if (base.per_capita_kwh) {
+            metricsHtml += `
+                <div class="metric-card"><div class="metric-value">${base.population_million.toFixed(1)}M</div><div class="metric-label">Population</div></div>
+                <div class="metric-card"><div class="metric-value">${base.per_capita_kwh.toLocaleString()}</div><div class="metric-label">Per Capita (kWh)</div></div>
+            `;
+        }
+
+        document.getElementById('scn-base-metrics').innerHTML = metricsHtml;
+
+        const sectorRows = Object.entries(base.demand_by_sector).map(([k, v]) => ({ Sector: k, 'Demand (GWh)': v.toLocaleString() }));
+        document.getElementById('scn-sector-table').innerHTML = buildTable(sectorRows, ['Sector', 'Demand (GWh)']);
+        const fuelRows = Object.entries(base.demand_by_fuel).map(([k, v]) => ({ Fuel: k, 'Demand (GWh)': v.toLocaleString() }));
+        document.getElementById('scn-fuel-table').innerHTML = buildTable(fuelRows, ['Fuel', 'Demand (GWh)']);
+        document.getElementById('scn-summary-table').innerHTML = buildTable(
+            data.scenario_summary, ['Scenario', 'Description', 'Base Year Demand (GWh)', 'Final Year Demand (GWh)', 'Avg. Annual Growth (%)']
+        );
+        if (data.charts.demand_comparison) Plotly.newPlot('demand-comparison-chart', data.charts.demand_comparison.data, data.charts.demand_comparison.layout, { responsive: true });
+        if (data.charts.emissions_comparison) Plotly.newPlot('emissions-comparison-chart', data.charts.emissions_comparison.data, data.charts.emissions_comparison.layout, { responsive: true });
+        if (data.charts.sector_breakdown) Plotly.newPlot('sector-breakdown-chart', data.charts.sector_breakdown.data, data.charts.sector_breakdown.layout, { responsive: true });
+    }
+
+    function downloadScenarioExcel() {
+        if (scnExcelFile) window.location.href = `/api/scenario/download/${scnExcelFile}`;
+    }
+</script>
+{% endblock %}

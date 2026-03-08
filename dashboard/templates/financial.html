@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% block title %}EconoGrid Planner — Financial Screening{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><span class="page-icon">💰</span> Financial Screening <span class="page-badge">RETScreen-Equivalent</span></h1>
+    <p>Techno-economic assessment with LCOE, NPV, FIRR, EIRR, cash flow analysis, and sensitivity</p>
+</div>
+
+<!-- Data Upload -->
+<div class="control-panel upload-panel">
+    <h3>📁 Data Source</h3>
+    <div class="data-source-toggle">
+        <button class="toggle-btn active" id="btn-sample-fin" onclick="toggleFinSource('sample')">Use Manual
+            Input</button>
+        <button class="toggle-btn" id="btn-upload-fin" onclick="toggleFinSource('upload')">Upload CSV / Excel</button>
+        <a href="/api/upload/template/financial" class="btn btn-secondary btn-sm">📄 Download Template</a>
+    </div>
+    <div class="upload-area" id="upload-area-fin" style="display:none">
+        <div class="drop-zone" id="drop-zone-fin" ondragover="event.preventDefault(); this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')" ondrop="handleFinDrop(event)">
+            <input type="file" id="file-input-fin" accept=".csv,.xlsx,.xls" onchange="handleFinFile(this)"
+                style="display:none">
+            <p>📂 <strong>Drag & drop</strong> your file here or <a href="#"
+                    onclick="document.getElementById('file-input-fin').click(); return false;">browse</a></p>
+            <p class="help-text">CSV/Excel with project parameters (capacity, CAPEX, OPEX, etc.)</p>
+        </div>
+        <div class="upload-preview" id="upload-preview-fin" style="display:none">
+            <div class="preview-header">
+                <span class="preview-filename" id="preview-filename-fin"></span>
+                <button class="btn btn-sm" onclick="clearFinUpload()">✕ Clear</button>
+            </div>
+            <div class="table-container preview-table" id="preview-table-fin"></div>
+        </div>
+    </div>
+</div>
+
+<div class="control-panel" id="manual-input-panel">
+    <h3>Project Parameters</h3>
+    <div class="form-grid">
+        <div class="form-group" style="grid-column: span 2">
+            <label for="technology">Technology Type</label>
+            <select id="technology" onchange="applyTechDefaults()" class="form-select">
+                <option value="solar">☀️ Solar PV (Utility-Scale)</option>
+                <option value="wind">💨 Wind Power (Onshore)</option>
+                <option value="hydro">💧 Hydropower (Run-of-River)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="capex">CAPEX (USD)</label>
+            <input type="number" id="capex" value="45000000" step="1000000">
+        </div>
+        <div class="form-group">
+            <label for="opex">Annual OPEX (USD)</label>
+            <input type="number" id="opex" value="650000" step="50000">
+        </div>
+        <div class="form-group">
+            <label for="capacity">Capacity (MW)</label>
+            <input type="number" id="capacity" value="50" step="5">
+        </div>
+        <div class="form-group">
+            <label for="cf">Capacity Factor</label>
+            <input type="number" id="cf" value="0.22" step="0.01" min="0.05" max="0.95">
+        </div>
+        <div class="form-group">
+            <label for="discount">Discount Rate (%)</label>
+            <input type="number" id="discount" value="8" step="0.5">
+        </div>
+        <div class="form-group">
+            <label for="elec-price">Electricity Price (USD/MWh)</label>
+            <input type="number" id="elec-price" value="65" step="5">
+        </div>
+        <div class="form-group">
+            <label for="project-life">Project Life (years)</label>
+            <input type="number" id="project-life" value="25" step="1">
+        </div>
+        <div class="form-group">
+            <label for="debt-frac">Debt Fraction (%)</label>
+            <input type="number" id="debt-frac" value="70" step="5">
+        </div>
+    </div>
+    <div class="button-group">
+        <button class="btn btn-primary" id="run-financial" onclick="runFinancial()">
+            ▶ Run Analysis
+        </button>
+        <button class="btn btn-secondary" id="download-excel-fin" onclick="downloadFinancialExcel()" disabled>
+            📥 Download Excel
+        </button>
+    </div>
+</div>
+
+<div class="status-bar" id="fin-status" style="display:none">
+    <span class="status-icon">⏳</span>
+    <span class="status-text" id="fin-status-text">Running analysis...</span>
+</div>
+
+<div class="results-section" id="fin-results" style="display:none">
+    <div class="metrics-grid" id="fin-metrics"></div>
+    <div class="result-card">
+        <h3>Financial Summary</h3>
+        <div class="table-container" id="fin-summary-table"></div>
+    </div>
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div id="cumulative-cf-chart" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+            <div id="annual-cf-chart" class="chart-container"></div>
+        </div>
+    </div>
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div id="revenue-cost-chart" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+            <div id="tornado-chart" class="chart-container"></div>
+        </div>
+    </div>
+    <div class="result-card">
+        <h3>Sensitivity Analysis — NPV</h3>
+        <div class="table-container" id="fin-sensitivity-table"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let finExcelFile = null;
+    let finUploadedData = null;
+    let finUseUpload = false;
+
+    // ── Technology Default Parameters ─────────────────────────
+    const TECH_DEFAULTS = {
+        solar: {
+            name: "Solar PV Plant",
+            technology: "Solar PV (Utility-Scale)",
+            capex: 45000000,       // $900k/MW × 50 MW
+            opex: 650000,
+            capacity: 50,
+            cf: 0.22,
+            project_life: 25,
+            degradation: 0.005,
+            capex_breakdown: {
+                "Modules & Inverters": 25000000,
+                "Balance of System": 10000000,
+                "Engineering": 5000000,
+                "Contingency": 5000000,
+            },
+        },
+        wind: {
+            name: "Wind Power Plant",
+            technology: "Wind Power (Onshore)",
+            capex: 65000000,       // $1.3M/MW × 50 MW
+            opex: 900000,
+            capacity: 50,
+            cf: 0.30,
+            project_life: 25,
+            degradation: 0.002,
+            capex_breakdown: {
+                "Turbines & Towers": 40000000,
+                "Foundation & Civil": 10000000,
+                "Grid Connection": 8000000,
+                "Engineering & Contingency": 7000000,
+            },
+        },
+        hydro: {
+            name: "Hydropower Station",
+            technology: "Hydropower (Run-of-River)",
+            capex: 125000000,      // $2.5M/MW × 50 MW
+            opex: 1200000,
+            capacity: 50,
+            cf: 0.50,
+            project_life: 40,
+            degradation: 0.001,
+            capex_breakdown: {
+                "Civil Works & Dam": 60000000,
+                "Turbines & Generators": 30000000,
+                "Electromechanical": 20000000,
+                "Engineering & Contingency": 15000000,
+            },
+        },
+    };
+
+    function applyTechDefaults() {
+        const tech = document.getElementById('technology').value;
+        const d = TECH_DEFAULTS[tech];
+        document.getElementById('capex').value = d.capex;
+        document.getElementById('opex').value = d.opex;
+        document.getElementById('capacity').value = d.capacity;
+        document.getElementById('cf').value = d.cf;
+        document.getElementById('project-life').value = d.project_life;
+    }
+
+    function toggleFinSource(mode) {
+        const area = document.getElementById('upload-area-fin');
+        const manual = document.getElementById('manual-input-panel');
+        document.getElementById('btn-sample-fin').classList.toggle('active', mode === 'sample');
+        document.getElementById('btn-upload-fin').classList.toggle('active', mode === 'upload');
+        area.style.display = mode === 'upload' ? 'block' : 'none';
+        finUseUpload = mode === 'upload';
+    }
+
+    function handleFinDrop(e) {
+        e.preventDefault();
+        e.target.closest('.drop-zone').classList.remove('drag-over');
+        if (e.dataTransfer.files[0]) uploadFinFile(e.dataTransfer.files[0]);
+    }
+
+    function handleFinFile(input) {
+        if (input.files[0]) uploadFinFile(input.files[0]);
+    }
+
+    async function uploadFinFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const res = await fetch('/api/upload/parse', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.status === 'success') {
+                finUploadedData = data;
+                document.getElementById('upload-preview-fin').style.display = 'block';
+                document.getElementById('drop-zone-fin').style.display = 'none';
+                document.getElementById('preview-filename-fin').textContent =
+                    `${data.filename} — ${data.rows} rows, ${data.columns.length} columns`;
+                document.getElementById('preview-table-fin').innerHTML = buildTable(data.preview, data.columns);
+
+                // Auto-fill form fields from first row if matching columns exist
+                const row = data.data[0];
+                if (row) {
+                    if (row.capex_total_usd) document.getElementById('capex').value = row.capex_total_usd;
+                    if (row.annual_opex_usd) document.getElementById('opex').value = row.annual_opex_usd;
+                    if (row.capacity_mw) document.getElementById('capacity').value = row.capacity_mw;
+                    if (row.capacity_factor) document.getElementById('cf').value = row.capacity_factor;
+                    if (row.discount_rate) document.getElementById('discount').value = (row.discount_rate * 100);
+                    if (row.electricity_price_usd_mwh) document.getElementById('elec-price').value = row.electricity_price_usd_mwh;
+                    if (row.project_life_years) document.getElementById('project-life').value = row.project_life_years;
+                    if (row.debt_fraction) document.getElementById('debt-frac').value = (row.debt_fraction * 100);
+                }
+            } else { alert('Upload error: ' + data.message); }
+        } catch (err) { alert('Upload failed: ' + err.message); }
+    }
+
+    function clearFinUpload() {
+        document.getElementById('upload-preview-fin').style.display = 'none';
+        document.getElementById('drop-zone-fin').style.display = 'block';
+        finUploadedData = null;
+    }
+
+    async function runFinancial() {
+        const btn = document.getElementById('run-financial');
+        const status = document.getElementById('fin-status');
+        const results = document.getElementById('fin-results');
+
+        btn.disabled = true;
+        btn.textContent = '⏳ Running...';
+        status.style.display = 'flex';
+        status.className = 'status-bar running';
+        document.getElementById('fin-status-text').textContent = 'Running financial analysis...';
+
+        const cap = parseFloat(document.getElementById('capacity').value);
+        const capFactor = parseFloat(document.getElementById('cf').value);
+        const tech = document.getElementById('technology').value;
+        const techDef = TECH_DEFAULTS[tech];
+
+        let projectData;
+        if (finUseUpload && finUploadedData && finUploadedData.data[0]) {
+            projectData = Object.assign({}, finUploadedData.data[0]);
+            projectData.annual_generation_mwh = cap * capFactor * 8760;
+        } else {
+            projectData = {
+                project_name: techDef.name,
+                technology: techDef.technology,
+                capacity_mw: cap,
+                capacity_factor: capFactor,
+                annual_generation_mwh: cap * capFactor * 8760,
+                capex_total_usd: parseFloat(document.getElementById('capex').value),
+                annual_opex_usd: parseFloat(document.getElementById('opex').value),
+                project_life_years: parseInt(document.getElementById('project-life').value),
+                discount_rate: parseFloat(document.getElementById('discount').value) / 100,
+                inflation_rate: 0.02,
+                degradation_rate: techDef.degradation,
+                electricity_price_usd_mwh: parseFloat(document.getElementById('elec-price').value),
+                price_escalation_rate: 0.015,
+                debt_fraction: parseFloat(document.getElementById('debt-frac').value) / 100,
+                debt_interest_rate: 0.06,
+                debt_term_years: 15,
+                tax_rate: 0.20,
+                depreciation_years: 20,
+                capex_breakdown: techDef.capex_breakdown,
+            };
+        }
+
+        try {
+            const response = await fetch('/api/financial/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_data: projectData })
+            });
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                displayFinancialResults(data);
+                results.style.display = 'block';
+                status.className = 'status-bar success';
+                document.getElementById('fin-status-text').textContent = '✅ Analysis complete';
+                finExcelFile = data.excel_file;
+                document.getElementById('download-excel-fin').disabled = false;
+            } else {
+                status.className = 'status-bar error';
+                document.getElementById('fin-status-text').textContent = '❌ ' + data.message;
+            }
+        } catch (err) {
+            status.className = 'status-bar error';
+            document.getElementById('fin-status-text').textContent = '❌ ' + err.message;
+        }
+        btn.disabled = false;
+        btn.textContent = '▶ Run Analysis';
+    }
+
+    function displayFinancialResults(data) {
+        const s = data.summary;
+        document.getElementById('fin-metrics').innerHTML = `
+        <div class="metric-card accent"><div class="metric-value">${s['LCOE (USD/MWh)']}</div><div class="metric-label">LCOE</div></div>
+        <div class="metric-card"><div class="metric-value">${s['NPV (USD)']}</div><div class="metric-label">NPV</div></div>
+        <div class="metric-card"><div class="metric-value">${s['FIRR (Financial)']}</div><div class="metric-label">FIRR (Financial)</div></div>
+        <div class="metric-card"><div class="metric-value">${s['EIRR (Economic)']}</div><div class="metric-label">EIRR (Economic)</div></div>
+        <div class="metric-card"><div class="metric-value">${s['Simple Payback (years)']}</div><div class="metric-label">Payback</div></div>
+        <div class="metric-card"><div class="metric-value">${s['Benefit-Cost Ratio']}</div><div class="metric-label">B/C Ratio</div></div>
+    `;
+        const summaryRows = Object.entries(s).map(([k, v]) => ({ Parameter: k, Value: v }));
+        document.getElementById('fin-summary-table').innerHTML = buildTable(summaryRows, ['Parameter', 'Value']);
+
+        if (data.charts.cumulative_cashflow) Plotly.newPlot('cumulative-cf-chart', data.charts.cumulative_cashflow.data, data.charts.cumulative_cashflow.layout, { responsive: true });
+        if (data.charts.annual_cashflow) Plotly.newPlot('annual-cf-chart', data.charts.annual_cashflow.data, data.charts.annual_cashflow.layout, { responsive: true });
+        if (data.charts.revenue_vs_cost) Plotly.newPlot('revenue-cost-chart', data.charts.revenue_vs_cost.data, data.charts.revenue_vs_cost.layout, { responsive: true });
+        if (data.charts.tornado) Plotly.newPlot('tornado-chart', data.charts.tornado.data, data.charts.tornado.layout, { responsive: true });
+
+        if (data.sensitivity_npv) {
+            document.getElementById('fin-sensitivity-table').innerHTML = buildTable(
+                data.sensitivity_npv, Object.keys(data.sensitivity_npv[0])
+            );
+        }
+    }
+
+    function downloadFinancialExcel() {
+        if (finExcelFile) window.location.href = `/api/financial/download/${finExcelFile}`;
+    }
+</script>
+{% endblock %}

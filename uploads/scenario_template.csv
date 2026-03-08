@@ -1,0 +1,26 @@
+Sector,Fuel,Base_Year_Demand_PJ,Activity_Growth_Rate,Intensity_Change_Rate
+Residential,Electricity,12,0.03,-0.01
+Residential,Natural Gas,22,0.03,-0.01
+Residential,Oil Products,9,0.03,-0.01
+Residential,Coal,20,0.03,-0.01
+Residential,Renewables,12,0.03,-0.01
+Commercial,Electricity,23,0.03,-0.01
+Commercial,Natural Gas,20,0.03,-0.01
+Commercial,Oil Products,22,0.03,-0.01
+Commercial,Coal,16,0.03,-0.01
+Commercial,Renewables,9,0.03,-0.01
+Industrial,Electricity,22,0.03,-0.01
+Industrial,Natural Gas,22,0.03,-0.01
+Industrial,Oil Products,21,0.03,-0.01
+Industrial,Coal,10,0.03,-0.01
+Industrial,Renewables,24,0.03,-0.01
+Agriculture,Electricity,8,0.03,-0.01
+Agriculture,Natural Gas,18,0.03,-0.01
+Agriculture,Oil Products,12,0.03,-0.01
+Agriculture,Coal,5,0.03,-0.01
+Agriculture,Renewables,22,0.03,-0.01
+Transport,Electricity,23,0.03,-0.01
+Transport,Natural Gas,9,0.03,-0.01
+Transport,Oil Products,7,0.03,-0.01
+Transport,Coal,10,0.03,-0.01
+Transport,Renewables,11,0.03,-0.01

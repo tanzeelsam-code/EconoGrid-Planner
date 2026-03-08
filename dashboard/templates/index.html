@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}EconoGrid Planner — Dashboard{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="hero-content">
+        <h1 class="hero-title">EconoGrid<br>Planner</h1>
+        <p class="hero-subtitle">Integrated platform for demand forecasting, energy planning, and financial screening
+        </p>
+        <div class="hero-badges">
+            <span class="badge">Python + statsmodels</span>
+            <span class="badge">Interactive Charts</span>
+            <span class="badge">Excel Export</span>
+        </div>
+    </div>
+</div>
+
+<div class="modules-grid">
+    <!-- Module 1: EViews -->
+    <div class="module-card" onclick="window.location='/regression'">
+        <div class="card-icon">📊</div>
+        <h2>Regression Engine</h2>
+        <p class="card-label">EViews-Equivalent</p>
+        <p class="card-description">
+            OLS regression with elasticity estimation, diagnostic tests,
+            and 30-year demand forecasting. Supports log-log, linear,
+            and semi-log model specifications.
+        </p>
+        <div class="card-features">
+            <span>Coefficient Tables</span>
+            <span>Diagnostics</span>
+            <span>Forecasting</span>
+        </div>
+        <a href="/regression" class="card-button">Launch Module →</a>
+    </div>
+
+    <!-- Module 2: LEAP -->
+    <div class="module-card" onclick="window.location='/scenario'">
+        <div class="card-icon">🔋</div>
+        <h2>Scenario Model</h2>
+        <p class="card-label">LEAP-Equivalent</p>
+        <p class="card-description">
+            Bottom-up energy planning with multi-sector demand projections,
+            fuel switching, supply-side modeling, and CO₂ emissions
+            accounting under multiple scenarios.
+        </p>
+        <div class="card-features">
+            <span>Energy Balance</span>
+            <span>Scenario Analysis</span>
+            <span>Emissions</span>
+        </div>
+        <a href="/scenario" class="card-button">Launch Module →</a>
+    </div>
+
+    <!-- Module 3: RETScreen -->
+    <div class="module-card" onclick="window.location='/financial'">
+        <div class="card-icon">💰</div>
+        <h2>Financial Screening</h2>
+        <p class="card-label">RETScreen-Equivalent</p>
+        <p class="card-description">
+            Techno-economic assessment with LCOE, NPV, IRR,
+            cash flow analysis, debt/equity modeling, and
+            sensitivity analysis for energy projects.
+        </p>
+        <div class="card-features">
+            <span>LCOE</span>
+            <span>NPV / IRR</span>
+            <span>Sensitivity</span>
+        </div>
+        <a href="/financial" class="card-button">Launch Module →</a>
+    </div>
+</div>
+
+<div class="info-bar">
+    <div class="info-item">
+        <strong>3</strong>
+        <span>Analytical Modules</span>
+    </div>
+    <div class="info-item">
+        <strong>30+</strong>
+        <span>Year Forecasting</span>
+    </div>
+    <div class="info-item">
+        <strong>Excel</strong>
+        <span>Professional Export</span>
+    </div>
+    <div class="info-item">
+        <strong>Open</strong>
+        <span>Source Python</span>
+    </div>
+</div>
+{% endblock %}

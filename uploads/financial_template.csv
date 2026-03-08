@@ -1,0 +1,2 @@
+project_name,technology,capacity_mw,capacity_factor,capex_total_usd,annual_opex_usd,project_life_years,discount_rate,inflation_rate,degradation_rate,electricity_price_usd_mwh,price_escalation_rate,debt_fraction,debt_interest_rate,debt_term_years,tax_rate
+My Solar PV Project,Solar PV,50,0.22,45000000,650000,25,0.08,0.02,0.005,65,0.015,0.7,0.06,15,0.2

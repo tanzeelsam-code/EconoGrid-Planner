@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="EconoGrid Planner — Professional analysis platform">
+    <title>{% block title %}EconoGrid Planner{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar" id="main-nav">
+        <div class="nav-brand">
+            <span class="nav-icon">⚡</span>
+            <h1>EconoGrid Planner</h1>
+            <span class="nav-subtitle">Econometric & Energy Planning Suite</span>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}" id="nav-home">
+                <span class="link-icon">🏠</span> Home
+            </a>
+            <a href="/regression" class="nav-link {% if request.path == '/regression' %}active{% endif %}"
+                id="nav-regression">
+                <span class="link-icon">📊</span> EViews
+            </a>
+            <a href="/scenario" class="nav-link {% if request.path == '/scenario' %}active{% endif %}"
+                id="nav-scenario">
+                <span class="link-icon">🔋</span> LEAP
+            </a>
+            <a href="/financial" class="nav-link {% if request.path == '/financial' %}active{% endif %}"
+                id="nav-financial">
+                <span class="link-icon">💰</span> RETScreen
+            </a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>EconoGrid Planner v1.0 — Built with Python, Flask, Plotly & statsmodels</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>
