@@ -40,10 +40,12 @@ def create_app() -> Flask:
     from .routes.regression_routes import regression_bp
     from .routes.scenario_routes import scenario_bp
     from .routes.financial_routes import financial_bp
+    from .routes.data_routes import data_bp
 
     app.register_blueprint(regression_bp, url_prefix="/api/regression")
     app.register_blueprint(scenario_bp, url_prefix="/api/scenario")
     app.register_blueprint(financial_bp, url_prefix="/api/financial")
+    app.register_blueprint(data_bp)
 
     from .routes.upload_routes import upload_bp
     from .routes.project_routes import project_bp

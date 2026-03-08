@@ -417,6 +417,54 @@ class TestFinancialExcelExport:
         print(f"✅ Financial Excel exported: {os.path.basename(path)}")
 
 
+class TestPakistanDataConnector:
+    """Tests for isolated Pakistan online-data helpers."""
+
+    def test_regression_seed_transform(self, monkeypatch):
+        from utils.pakistan_data import PakistanDataConnector
+
+        def fake_fetch(self, url):
+            if "NY.GDP.MKTP.CD" in url:
+                return [{}, [{"date": "2022", "value": 376000000000}, {"date": "2021", "value": 348000000000}]]
+            if "SP.POP.TOTL" in url:
+                return [{}, [{"date": "2022", "value": 231402117}, {"date": "2021", "value": 227196741}]]
+            if "EG.USE.ELEC.KH.PC" in url:
+                return [{}, [{"date": "2022", "value": 450.0}, {"date": "2021", "value": 430.0}]]
+            if "EG.ELC.ACCS.ZS" in url:
+                return [{}, [{"date": "2022", "value": 74.0}, {"date": "2021", "value": 71.5}]]
+            raise AssertionError(url)
+
+        monkeypatch.setattr(PakistanDataConnector, "_fetch_json", fake_fetch)
+        payload = PakistanDataConnector().fetch_regression_seed(2021, 2022)
+
+        assert payload["status"] == "success"
+        assert payload["rows"] == 2
+        assert payload["data"][0]["Electricity_Demand_GWh"] > 0
+        print("✅ Pakistan regression seed transform works")
+
+    def test_solar_transform(self, monkeypatch):
+        from utils.pakistan_data import PakistanDataConnector
+
+        def fake_fetch(self, url):
+            return {
+                "properties": {
+                    "parameter": {
+                        "ALLSKY_SFC_SW_DWN": {m: 5.0 for m in ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]},
+                        "T2M": {m: 25.0 for m in ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]},
+                        "WS10M": {m: 3.0 for m in ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]},
+                    }
+                }
+            }
+
+        monkeypatch.setattr(PakistanDataConnector, "_fetch_json", fake_fetch)
+        payload = PakistanDataConnector().fetch_solar_resource(33.6844, 73.0479)
+
+        assert payload["status"] == "success"
+        assert len(payload["data"]) == 12
+        assert payload["annual_average_irradiance"] == 5.0
+        print("✅ Pakistan solar transform works")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # INTEGRATION TESTS
 # ═══════════════════════════════════════════════════════════════════════
@@ -458,7 +506,7 @@ class TestIntegration:
         app = create_app()
         client = app.test_client()
 
-        for path in ["/regression", "/scenario", "/financial"]:
+        for path in ["/regression", "/scenario", "/financial", "/pakistan-data"]:
             response = client.get(path)
             assert response.status_code == 200, f"Failed: {path}"
             print(f"  ✅ {path} loads")
@@ -582,6 +630,48 @@ class TestIntegration:
         assert report_response.status_code == 200
         assert report_response.mimetype == "application/pdf"
         print("✅ Project persistence and report export work")
+
+    def test_pakistan_data_api(self, monkeypatch):
+        """Test isolated Pakistan online-data API endpoints."""
+        from dashboard.app import create_app
+        from utils.pakistan_data import PakistanDataConnector
+
+        monkeypatch.setattr(
+            PakistanDataConnector,
+            "fetch_regression_seed",
+            lambda self, start_year, end_year: {
+                "status": "success",
+                "country": "Pakistan",
+                "source": "World Bank Open Data API",
+                "rows": 1,
+                "data": [{"Year": 2022, "Electricity_Demand_GWh": 1.0}],
+            },
+        )
+        monkeypatch.setattr(
+            PakistanDataConnector,
+            "fetch_solar_resource",
+            lambda self, latitude, longitude: {
+                "status": "success",
+                "country": "Pakistan",
+                "source": "NASA POWER",
+                "latitude": latitude,
+                "longitude": longitude,
+                "annual_average_irradiance": 5.0,
+                "data": [{"Month": "JAN", "Solar_Irradiance_kWh_m2_day": 5.0}],
+            },
+        )
+
+        app = create_app()
+        client = app.test_client()
+
+        reg = client.get("/api/data/pakistan/regression-seed?start_year=2020&end_year=2022")
+        assert reg.status_code == 200
+        assert reg.get_json()["status"] == "success"
+
+        solar = client.get("/api/data/pakistan/solar?location=Islamabad")
+        assert solar.status_code == 200
+        assert solar.get_json()["status"] == "success"
+        print("✅ Pakistan data APIs return isolated helper payloads")
 
 
 if __name__ == "__main__":

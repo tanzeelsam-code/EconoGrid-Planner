@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}EconoGrid Planner — Pakistan Online Data{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><span class="page-icon">🌐</span> Pakistan Online Data Helper</h1>
+    <p>Standalone connector page for fetching Pakistan macro and solar data without changing the main app workflows.</p>
+</div>
+
+<div class="control-panel">
+    <h3>Supported Sources</h3>
+    <div id="pak-sources" class="table-container"></div>
+</div>
+
+<div class="control-panel">
+    <h3>Regression Seed Dataset</h3>
+    <p class="help-text">Fetch World Bank indicators and derive annual electricity demand in GWh for Pakistan.</p>
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="pak-start-year">Start Year</label>
+            <input type="number" id="pak-start-year" value="2000" min="1960" max="2025">
+        </div>
+        <div class="form-group">
+            <label for="pak-end-year">End Year</label>
+            <input type="number" id="pak-end-year" value="2024" min="1960" max="2025">
+        </div>
+    </div>
+    <div class="button-group">
+        <button class="btn btn-primary" onclick="fetchPakistanRegressionSeed()">Fetch Pakistan Macro Data</button>
+        <button class="btn btn-secondary" onclick="downloadPakistanCsv('regression')">Download CSV</button>
+    </div>
+    <p class="help-text" id="pak-reg-status"></p>
+</div>
+
+<div class="result-card">
+    <h3>Regression Dataset Preview</h3>
+    <div id="pak-reg-table" class="table-container"></div>
+</div>
+
+<div class="control-panel">
+    <h3>Solar Resource Dataset</h3>
+    <p class="help-text">Fetch NASA POWER climatology for a Pakistan city or custom coordinates.</p>
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="pak-location">Preset Location</label>
+            <select id="pak-location">
+                <option value="Islamabad">Islamabad</option>
+                <option value="Lahore">Lahore</option>
+                <option value="Karachi">Karachi</option>
+                <option value="Peshawar">Peshawar</option>
+                <option value="Quetta">Quetta</option>
+                <option value="custom">Custom Coordinates</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="pak-lat">Latitude</label>
+            <input type="number" id="pak-lat" value="33.6844" step="0.0001">
+        </div>
+        <div class="form-group">
+            <label for="pak-lon">Longitude</label>
+            <input type="number" id="pak-lon" value="73.0479" step="0.0001">
+        </div>
+    </div>
+    <div class="button-group">
+        <button class="btn btn-primary" onclick="fetchPakistanSolar()">Fetch Solar Resource</button>
+        <button class="btn btn-secondary" onclick="downloadPakistanCsv('solar')">Download CSV</button>
+    </div>
+    <p class="help-text" id="pak-solar-status"></p>
+</div>
+
+<div class="result-card">
+    <h3>Solar Dataset Preview</h3>
+    <div class="metrics-grid" id="pak-solar-metrics"></div>
+    <div id="pak-solar-table" class="table-container"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let pakistanRegressionData = [];
+    let pakistanSolarData = [];
+
+    const PAKISTAN_PRESETS = {
+        Islamabad: { lat: 33.6844, lon: 73.0479 },
+        Lahore: { lat: 31.5204, lon: 74.3587 },
+        Karachi: { lat: 24.8607, lon: 67.0011 },
+        Peshawar: { lat: 34.0151, lon: 71.5249 },
+        Quetta: { lat: 30.1798, lon: 66.9750 },
+    };
+
+    async function fetchPakistanSources() {
+        const res = await fetch('/api/data/pakistan/sources');
+        const data = await res.json();
+        if (data.status !== 'success') return;
+        document.getElementById('pak-sources').innerHTML = buildTable(
+            data.sources,
+            ['name', 'module_fit', 'description', 'official_url']
+        );
+    }
+
+    async function fetchPakistanRegressionSeed() {
+        const start = document.getElementById('pak-start-year').value;
+        const end = document.getElementById('pak-end-year').value;
+        const status = document.getElementById('pak-reg-status');
+        status.textContent = 'Fetching World Bank data...';
+
+        try {
+            const res = await fetch(`/api/data/pakistan/regression-seed?start_year=${start}&end_year=${end}`);
+            const data = await res.json();
+            if (data.status !== 'success') throw new Error(data.message || 'Fetch failed');
+
+            pakistanRegressionData = data.data || [];
+            document.getElementById('pak-reg-table').innerHTML = buildTable(
+                pakistanRegressionData.slice(0, 12),
+                ['Year', 'Electricity_Demand_GWh', 'GDP_Billion_USD', 'Population_Million', 'Electricity_Use_kWh_per_Capita', 'Electricity_Access_pct']
+            );
+            status.textContent = `Fetched ${data.rows} annual rows from ${data.source}.`;
+        } catch (err) {
+            status.textContent = err.message;
+        }
+    }
+
+    async function fetchPakistanSolar() {
+        const location = document.getElementById('pak-location').value;
+        const status = document.getElementById('pak-solar-status');
+        status.textContent = 'Fetching NASA POWER data...';
+
+        let url = '/api/data/pakistan/solar';
+        if (location === 'custom') {
+            const lat = document.getElementById('pak-lat').value;
+            const lon = document.getElementById('pak-lon').value;
+            url += `?location=custom&latitude=${lat}&longitude=${lon}`;
+        } else {
+            url += `?location=${encodeURIComponent(location)}`;
+        }
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.status !== 'success') throw new Error(data.message || 'Fetch failed');
+
+            pakistanSolarData = data.data || [];
+            document.getElementById('pak-solar-metrics').innerHTML = `
+                <div class="metric-card"><div class="metric-value">${data.location}</div><div class="metric-label">Location</div></div>
+                <div class="metric-card accent"><div class="metric-value">${data.annual_average_irradiance}</div><div class="metric-label">Avg Irradiance</div></div>
+                <div class="metric-card"><div class="metric-value">${formatNumber(data.latitude)}</div><div class="metric-label">Latitude</div></div>
+                <div class="metric-card"><div class="metric-value">${formatNumber(data.longitude)}</div><div class="metric-label">Longitude</div></div>
+            `;
+            document.getElementById('pak-solar-table').innerHTML = buildTable(
+                pakistanSolarData,
+                ['Month', 'Solar_Irradiance_kWh_m2_day', 'Temperature_C', 'Wind_Speed_m_s']
+            );
+            status.textContent = `Fetched monthly solar climatology from ${data.source}.`;
+        } catch (err) {
+            status.textContent = err.message;
+        }
+    }
+
+    function downloadPakistanCsv(kind) {
+        const rows = kind === 'regression' ? pakistanRegressionData : pakistanSolarData;
+        if (!rows || !rows.length) return;
+
+        const headers = Object.keys(rows[0]);
+        const csv = [
+            headers.join(','),
+            ...rows.map(row => headers.map(h => JSON.stringify(row[h] ?? '')).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = kind === 'regression' ? 'pakistan_regression_seed.csv' : 'pakistan_solar_resource.csv';
+        link.click();
+        URL.revokeObjectURL(url);
+    }
+
+    document.getElementById('pak-location').addEventListener('change', (e) => {
+        const preset = PAKISTAN_PRESETS[e.target.value];
+        if (preset) {
+            document.getElementById('pak-lat').value = preset.lat;
+            document.getElementById('pak-lon').value = preset.lon;
+        }
+    });
+
+    fetchPakistanSources();
+</script>
+{% endblock %}

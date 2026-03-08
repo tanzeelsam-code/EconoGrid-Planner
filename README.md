@@ -140,6 +140,14 @@ The dashboard is organized as a planning workflow:
 - **Stress-test finance** with project vs. equity metrics, DSCR, LLCR, and sensitivity outputs
 - **Export workbooks** for each module
 
+## Optional Online Data Helper
+
+There is also a standalone helper page at `/pakistan-data` that fetches:
+- **Pakistan macro data** from the World Bank API for regression seeding
+- **Pakistan solar resource data** from NASA POWER for quick financial pre-screening
+
+This helper is isolated from the main module workflows, so existing upload/manual flows are unchanged.
+
 ---
 
 ## License
