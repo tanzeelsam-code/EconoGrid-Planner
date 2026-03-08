@@ -47,8 +47,10 @@ def create_app() -> Flask:
 
     from .routes.upload_routes import upload_bp
     from .routes.project_routes import project_bp
+    from .routes.advanced_routes import advanced_bp
     app.register_blueprint(upload_bp, url_prefix="/api/upload")
     app.register_blueprint(project_bp, url_prefix="/api/projects")
+    app.register_blueprint(advanced_bp, url_prefix="/api/advanced")
 
     # Register main routes
     from flask import render_template, jsonify
