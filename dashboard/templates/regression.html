@@ -77,6 +77,25 @@
     </div>
 </div>
 
+<div class="control-panel">
+    <h3>Project Snapshot</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="reg-project-name">Project Name</label>
+            <input type="text" id="reg-project-name" placeholder="e.g. Kenya Grid Plan 2026">
+        </div>
+        <div class="form-group">
+            <label for="reg-project-select">Load Saved Project</label>
+            <select id="reg-project-select"></select>
+        </div>
+    </div>
+    <div class="button-group">
+        <button class="btn btn-secondary" onclick="saveRegressionProject()">💾 Save Regression Snapshot</button>
+        <button class="btn btn-secondary" onclick="loadRegressionProject()">📂 Load Latest Regression Snapshot</button>
+    </div>
+    <p class="help-text" id="reg-project-status"></p>
+</div>
+
 <!-- Status -->
 <div class="status-bar" id="reg-status" style="display:none">
     <span class="status-icon">⏳</span>
@@ -325,7 +344,23 @@
         btn.textContent = '▶ Run Regression';
     }
 
+    function collectRegressionInputs() {
+        const selected = Array.from(document.querySelectorAll('#indep-vars-checkboxes input:checked')).map(cb => cb.value);
+        return {
+            model_type: document.getElementById('model-type').value,
+            dependent_var: document.getElementById('dep-var').value,
+            independent_vars: selected,
+            growth_assumptions: {
+                GDP_Billion_USD: parseFloat(document.getElementById('gdp-growth').value) / 100,
+                Population_Million: parseFloat(document.getElementById('pop-growth').value) / 100,
+                Electricity_Price_USD_kWh: parseFloat(document.getElementById('price-growth').value) / 100,
+            },
+            data: regUseUpload && regUploadedData ? regUploadedData.data : null,
+        };
+    }
+
     function displayRegressionResults(data) {
+        setLatestAnalysis('regression', collectRegressionInputs(), data);
         const stats = data.model_stats;
         const metricsHtml = `
         <div class="metric-card"><div class="metric-value">${stats['R-squared'].toFixed(4)}</div><div class="metric-label">R²</div></div>
@@ -367,10 +402,36 @@
         document.getElementById('reg-summary-text').textContent = data.summary_text;
     }
 
+    async function saveRegressionProject() {
+        await saveProjectSnapshot('regression', 'reg-project-name', 'reg-project-status');
+        populateProjectSelect('reg-project-select');
+        refreshProjectLibrary();
+    }
+
+    async function loadRegressionProject() {
+        try {
+            const version = await loadLatestProjectVersion('regression', 'reg-project-select');
+            const inputs = version.inputs || {};
+            document.getElementById('reg-project-name').value = '';
+            if (inputs.model_type) document.getElementById('model-type').value = inputs.model_type;
+            if (inputs.dependent_var) document.getElementById('dep-var').value = inputs.dependent_var;
+            if (inputs.growth_assumptions?.GDP_Billion_USD !== undefined) document.getElementById('gdp-growth').value = inputs.growth_assumptions.GDP_Billion_USD * 100;
+            if (inputs.growth_assumptions?.Population_Million !== undefined) document.getElementById('pop-growth').value = inputs.growth_assumptions.Population_Million * 100;
+            if (inputs.growth_assumptions?.Electricity_Price_USD_kWh !== undefined) document.getElementById('price-growth').value = inputs.growth_assumptions.Electricity_Price_USD_kWh * 100;
+            displayRegressionResults(version.results);
+            document.getElementById('reg-results').style.display = 'block';
+            document.getElementById('reg-project-status').textContent = `Loaded ${version.version_id}.`;
+        } catch (err) {
+            document.getElementById('reg-project-status').textContent = err.message;
+        }
+    }
+
     function downloadExcel(module) {
         if (module === 'regression' && regExcelFile) {
             window.location.href = `/api/regression/download/${regExcelFile}`;
         }
     }
+
+    populateProjectSelect('reg-project-select');
 </script>
 {% endblock %}

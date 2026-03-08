@@ -90,6 +90,25 @@
     </div>
 </div>
 
+<div class="control-panel">
+    <h3>Project Snapshot</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="fin-project-name">Project Name</label>
+            <input type="text" id="fin-project-name" placeholder="e.g. 50 MW Solar Screening">
+        </div>
+        <div class="form-group">
+            <label for="fin-project-select">Load Saved Project</label>
+            <select id="fin-project-select"></select>
+        </div>
+    </div>
+    <div class="button-group">
+        <button class="btn btn-secondary" onclick="saveFinancialProject()">💾 Save Financial Snapshot</button>
+        <button class="btn btn-secondary" onclick="loadFinancialProject()">📂 Load Latest Financial Snapshot</button>
+    </div>
+    <p class="help-text" id="fin-project-status"></p>
+</div>
+
 <div class="status-bar" id="fin-status" style="display:none">
     <span class="status-icon">⏳</span>
     <span class="status-text" id="fin-status-text">Running analysis...</span>
@@ -301,6 +320,7 @@
             const data = await response.json();
 
             if (data.status === 'success') {
+                setLatestAnalysis('financial', projectData, data);
                 displayFinancialResults(data);
                 results.style.display = 'block';
                 status.className = 'status-bar success';
@@ -349,5 +369,33 @@
     function downloadFinancialExcel() {
         if (finExcelFile) window.location.href = `/api/financial/download/${finExcelFile}`;
     }
+
+    async function saveFinancialProject() {
+        await saveProjectSnapshot('financial', 'fin-project-name', 'fin-project-status');
+        populateProjectSelect('fin-project-select');
+        refreshProjectLibrary();
+    }
+
+    async function loadFinancialProject() {
+        try {
+            const version = await loadLatestProjectVersion('financial', 'fin-project-select');
+            const inputs = version.inputs || {};
+            if (inputs.capex_total_usd !== undefined) document.getElementById('capex').value = inputs.capex_total_usd;
+            if (inputs.annual_opex_usd !== undefined) document.getElementById('opex').value = inputs.annual_opex_usd;
+            if (inputs.capacity_mw !== undefined) document.getElementById('capacity').value = inputs.capacity_mw;
+            if (inputs.capacity_factor !== undefined) document.getElementById('cf').value = inputs.capacity_factor;
+            if (inputs.discount_rate !== undefined) document.getElementById('discount').value = inputs.discount_rate * 100;
+            if (inputs.electricity_price_usd_mwh !== undefined) document.getElementById('elec-price').value = inputs.electricity_price_usd_mwh;
+            if (inputs.project_life_years !== undefined) document.getElementById('project-life').value = inputs.project_life_years;
+            if (inputs.debt_fraction !== undefined) document.getElementById('debt-frac').value = inputs.debt_fraction * 100;
+            displayFinancialResults(version.results);
+            document.getElementById('fin-results').style.display = 'block';
+            document.getElementById('fin-project-status').textContent = `Loaded ${version.version_id}.`;
+        } catch (err) {
+            document.getElementById('fin-project-status').textContent = err.message;
+        }
+    }
+
+    populateProjectSelect('fin-project-select');
 </script>
 {% endblock %}

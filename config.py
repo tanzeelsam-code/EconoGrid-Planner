@@ -13,10 +13,15 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = BASE_DIR / "outputs"
 UPLOAD_DIR = BASE_DIR / "uploads"
+PROJECTS_DIR = DATA_DIR / "projects"
+PDF_OUTPUT_DIR = OUTPUT_DIR / "pdf"
 
 # Ensure output/upload directories exist
+DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 UPLOAD_DIR.mkdir(exist_ok=True)
+PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+PDF_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Flask Settings ─────────────────────────────────────────────────────────────
 FLASK_HOST = "0.0.0.0"

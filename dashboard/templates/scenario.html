@@ -149,6 +149,25 @@
     </div>
 </div>
 
+<div class="control-panel">
+    <h3>Project Snapshot</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="scn-project-name">Project Name</label>
+            <input type="text" id="scn-project-name" placeholder="e.g. National Power Outlook">
+        </div>
+        <div class="form-group">
+            <label for="scn-project-select">Load Saved Project</label>
+            <select id="scn-project-select"></select>
+        </div>
+    </div>
+    <div class="button-group">
+        <button class="btn btn-secondary" onclick="saveScenarioProject()">💾 Save Scenario Snapshot</button>
+        <button class="btn btn-secondary" onclick="loadScenarioProject()">📂 Load Latest Scenario Snapshot</button>
+    </div>
+    <p class="help-text" id="scn-project-status"></p>
+</div>
+
 <div class="status-bar" id="scn-status" style="display:none">
     <span class="status-icon">⏳</span>
     <span class="status-text" id="scn-status-text">Running scenarios...</span>
@@ -293,6 +312,27 @@
         }));
     }
 
+    function collectScenarioInputs() {
+        const body = {
+            base_year: parseInt(document.getElementById('base-year').value),
+            projection_horizon: parseInt(document.getElementById('projection-horizon').value),
+            sector_demands: getSectorDemands(),
+            summer_load_factor: parseFloat(document.getElementById('summer-lf').value),
+            winter_load_factor: parseFloat(document.getElementById('winter-lf').value),
+            reserve_margin: parseFloat(document.getElementById('reserve-margin').value) / 100,
+        };
+        const pop = parseFloat(document.getElementById('population').value);
+        const popGrowth = parseFloat(document.getElementById('pop-growth-rate').value) / 100;
+        if (pop && !isNaN(pop)) {
+            body.population_million = pop;
+            body.population_growth_rate = popGrowth;
+        }
+        if (scnUseUpload && scnUploadedData) {
+            body.uploaded_data = scnUploadedData.data;
+        }
+        return body;
+    }
+
     // ── Run Scenario ──────────────────────────────────────────
     async function runScenario() {
         const btn = document.getElementById('run-scenario');
@@ -306,25 +346,7 @@
         document.getElementById('scn-status-text').textContent = 'Running all scenarios...';
 
         try {
-            const body = {
-                base_year: parseInt(document.getElementById('base-year').value),
-                projection_horizon: parseInt(document.getElementById('projection-horizon').value),
-                sector_demands: getSectorDemands(),
-                summer_load_factor: parseFloat(document.getElementById('summer-lf').value),
-                winter_load_factor: parseFloat(document.getElementById('winter-lf').value),
-                reserve_margin: parseFloat(document.getElementById('reserve-margin').value) / 100,
-            };
-
-            const pop = parseFloat(document.getElementById('population').value);
-            const popGrowth = parseFloat(document.getElementById('pop-growth-rate').value) / 100;
-            if (pop && !isNaN(pop)) {
-                body.population_million = pop;
-                body.population_growth_rate = popGrowth;
-            }
-
-            if (scnUseUpload && scnUploadedData) {
-                body.uploaded_data = scnUploadedData.data;
-            }
+            const body = collectScenarioInputs();
 
             const response = await fetch('/api/scenario/run', {
                 method: 'POST',
@@ -353,6 +375,7 @@
     }
 
     function displayScenarioResults(data) {
+        setLatestAnalysis('scenario', collectScenarioInputs(), data);
         const base = data.base_year;
         let metricsHtml = `
             <div class="metric-card"><div class="metric-value">${base.year}</div><div class="metric-label">Base Year</div></div>
@@ -401,5 +424,46 @@
     function downloadScenarioExcel() {
         if (scnExcelFile) window.location.href = `/api/scenario/download/${scnExcelFile}`;
     }
+
+    async function saveScenarioProject() {
+        await saveProjectSnapshot('scenario', 'scn-project-name', 'scn-project-status');
+        populateProjectSelect('scn-project-select');
+        refreshProjectLibrary();
+    }
+
+    async function loadScenarioProject() {
+        try {
+            const version = await loadLatestProjectVersion('scenario', 'scn-project-select');
+            const inputs = version.inputs || {};
+            document.getElementById('base-year').value = inputs.base_year || 2022;
+            document.getElementById('projection-horizon').value = inputs.projection_horizon || 30;
+            document.getElementById('summer-lf').value = inputs.summer_load_factor || 0.60;
+            document.getElementById('winter-lf').value = inputs.winter_load_factor || 0.45;
+            document.getElementById('reserve-margin').value = (inputs.reserve_margin || 0.15) * 100;
+            document.getElementById('population').value = inputs.population_million || '';
+            if (inputs.population_growth_rate !== undefined) document.getElementById('pop-growth-rate').value = inputs.population_growth_rate * 100;
+            if (Array.isArray(inputs.sector_demands) && inputs.sector_demands.length) {
+                const tbody = document.querySelector('#sector-demand-table tbody');
+                tbody.innerHTML = inputs.sector_demands.map(row => `
+                    <tr>
+                        <td><input type="text" class="table-input sector-name" value="${row.sector || ''}"></td>
+                        <td><input type="number" class="table-input sector-demand" value="${row.demand_gwh || 0}" step="100"></td>
+                        <td><input type="number" class="table-input sector-bau" value="${(row.bau_growth || 0) * 100}" step="0.5"></td>
+                        <td><input type="number" class="table-input sector-low" value="${(row.low_carbon_growth || 0) * 100}" step="0.5"></td>
+                        <td><input type="number" class="table-input sector-high" value="${(row.high_growth || 0) * 100}" step="0.5"></td>
+                        <td><button class="btn-remove" onclick="removeRow(this)">✕</button></td>
+                    </tr>
+                `).join('');
+                updateTotal();
+            }
+            displayScenarioResults(version.results);
+            document.getElementById('scn-results').style.display = 'block';
+            document.getElementById('scn-project-status').textContent = `Loaded ${version.version_id}.`;
+        } catch (err) {
+            document.getElementById('scn-project-status').textContent = err.message;
+        }
+    }
+
+    populateProjectSelect('scn-project-select');
 </script>
 {% endblock %}

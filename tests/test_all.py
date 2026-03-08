@@ -12,6 +12,7 @@ import sys
 import pytest
 import pandas as pd
 import numpy as np
+import uuid
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -545,6 +546,42 @@ class TestIntegration:
         assert "Project NPV (USD)" in data["summary"]
         assert "Minimum DSCR" in data["summary"]
         print("✅ Financial API returns success")
+
+    def test_project_save_and_report(self):
+        """Test project persistence and PDF report generation."""
+        from dashboard.app import create_app
+        app = create_app()
+        client = app.test_client()
+
+        unique_name = f"pytest-project-{uuid.uuid4().hex[:8]}"
+
+        reg_response = client.post("/api/regression/run", json={}, content_type="application/json")
+        reg_payload = reg_response.get_json()
+        assert reg_payload["status"] == "success"
+
+        save_response = client.post(
+            "/api/projects/save",
+            json={
+                "project_name": unique_name,
+                "module": "regression",
+                "inputs": {"model_type": "log_log"},
+                "results": reg_payload,
+            },
+            content_type="application/json",
+        )
+        save_payload = save_response.get_json()
+        assert save_payload["status"] == "success"
+        project_id = save_payload["project"]["project_id"]
+
+        list_response = client.get("/api/projects")
+        list_payload = list_response.get_json()
+        assert list_payload["status"] == "success"
+        assert any(p["project_id"] == project_id for p in list_payload["projects"])
+
+        report_response = client.get(f"/api/projects/{project_id}/report")
+        assert report_response.status_code == 200
+        assert report_response.mimetype == "application/pdf"
+        print("✅ Project persistence and report export work")
 
 
 if __name__ == "__main__":

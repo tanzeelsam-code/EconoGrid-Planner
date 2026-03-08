@@ -103,5 +103,117 @@ function formatPercent(value) {
     return (value * 100).toFixed(2) + '%';
 }
 
+window.latestAnalysisByModule = {
+    regression: null,
+    scenario: null,
+    financial: null,
+};
+
+function setLatestAnalysis(module, inputs, results) {
+    window.latestAnalysisByModule[module] = { inputs, results };
+}
+
+async function populateProjectSelect(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    try {
+        const response = await fetch('/api/projects');
+        const payload = await response.json();
+        if (payload.status !== 'success') return;
+
+        select.innerHTML = '<option value="">Select saved project</option>';
+        payload.projects.forEach(project => {
+            const option = document.createElement('option');
+            option.value = project.project_id;
+            option.textContent = `${project.project_name} (${project.version_count} versions)`;
+            select.appendChild(option);
+        });
+    } catch (err) {
+        console.error('Failed to load project list', err);
+    }
+}
+
+async function saveProjectSnapshot(module, projectNameInputId, statusTargetId) {
+    const projectName = document.getElementById(projectNameInputId)?.value?.trim();
+    const latest = window.latestAnalysisByModule[module];
+    const statusNode = document.getElementById(statusTargetId);
+
+    if (!projectName) {
+        if (statusNode) statusNode.textContent = 'Enter a project name first.';
+        return;
+    }
+    if (!latest) {
+        if (statusNode) statusNode.textContent = 'Run an analysis before saving.';
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/projects/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_name: projectName,
+                module,
+                inputs: latest.inputs,
+                results: latest.results,
+            })
+        });
+        const payload = await response.json();
+        if (payload.status === 'success') {
+            if (statusNode) statusNode.textContent = `Saved ${payload.project.project_name} (${payload.project.project_id}).`;
+        } else if (statusNode) {
+            statusNode.textContent = payload.message || 'Save failed.';
+        }
+    } catch (err) {
+        if (statusNode) statusNode.textContent = err.message;
+    }
+}
+
+async function loadLatestProjectVersion(module, selectId) {
+    const projectId = document.getElementById(selectId)?.value;
+    if (!projectId) return null;
+
+    const response = await fetch(`/api/projects/${projectId}/latest/${module}`);
+    const payload = await response.json();
+    if (payload.status !== 'success') {
+        throw new Error(payload.message || 'Failed to load project version.');
+    }
+    return payload.version;
+}
+
+async function refreshProjectLibrary() {
+    const target = document.getElementById('project-library');
+    if (!target) return;
+
+    try {
+        const response = await fetch('/api/projects');
+        const payload = await response.json();
+        if (payload.status !== 'success' || !payload.projects.length) {
+            target.innerHTML = '<p style="color:var(--text-muted);font-style:italic;">No saved projects yet.</p>';
+            return;
+        }
+
+        target.innerHTML = payload.projects.map(project => `
+            <div class="project-card">
+                <div>
+                    <h3>${escapeHtml(project.project_name)}</h3>
+                    <p>${escapeHtml(project.modules.join(', ') || 'No modules')}</p>
+                    <p class="help-text">Updated ${escapeHtml(project.updated_at)}</p>
+                </div>
+                <div class="project-card-actions">
+                    <a class="btn btn-secondary btn-sm" href="/api/projects/${project.project_id}/report">Download PDF</a>
+                </div>
+            </div>
+        `).join('');
+    } catch (err) {
+        target.innerHTML = `<p style="color:var(--error);">Failed to load projects: ${escapeHtml(err.message)}</p>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    refreshProjectLibrary();
+});
+
 // Log app initialization
 console.log('⚡ EconoGrid Planner Dashboard initialized');
